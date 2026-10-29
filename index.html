@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scaffold Studio</title>
+<meta name="description" content="Conception, mesure et perfusion simulée de scaffolds poreux pour l'ingénierie tissulaire osseuse.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23141922'/%3E%3Cpath d='M6 16c3-6 7-6 10 0s7 6 10 0M6 10c3-6 7-6 10 0s7 6 10 0M6 22c3-6 7-6 10 0s7 6 10 0' fill='none' stroke='%2378d6c6' stroke-width='2'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="./src/style.css">
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-logo" viewBox="0 0 32 32"><path d="M6 16c3-6 7-6 10 0s7 6 10 0M6 10c3-6 7-6 10 0s7 6 10 0M6 22c3-6 7-6 10 0s7 6 10 0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+    <symbol id="i-stl" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M4 7.5l8 4.5 8-4.5M12 12v9"/></g></symbol>
+    <symbol id="i-report" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/></g></symbol>
+    <symbol id="i-photo" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></g></symbol>
+    <symbol id="i-rec" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="6" width="13" height="12" rx="2"/><path d="M16 10l5-3v10l-5-3z" stroke-linejoin="round"/></g></symbol>
+    <symbol id="i-fly" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3.5"/><path d="M12 4v3M12 17v3M4 12h3M17 12h3"/></g></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 5l12 7-12 7z" fill="currentColor"/></symbol>
+    <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1.5" fill="currentColor"/></symbol>
+    <symbol id="i-eye" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.7"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></g></symbol>
+    <symbol id="i-help" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.3-1 .8-1 1.5v.5"/><circle cx="12" cy="17" r=".6" fill="currentColor"/></g></symbol>
+  </defs>
+</svg>
+
+<header class="topbar">
+  <div class="brand"><svg class="logo"><use href="#i-logo"/></svg><span>Scaffold Studio</span><em id="version">v1.0</em></div>
+  <div class="presets">
+    <label for="preset">Modèle</label>
+    <select id="preset"></select>
+  </div>
+  <nav class="actions">
+    <button id="btn-stl" title="Exporter le maillage pour l'impression 3D"><svg><use href="#i-stl"/></svg><span>STL</span></button>
+    <button id="btn-report" title="Exporter les mesures (CSV)"><svg><use href="#i-report"/></svg><span>Rapport</span></button>
+    <button id="btn-photo" title="Capture d'image (P)"><svg><use href="#i-photo"/></svg><span>Image</span></button>
+    <button id="btn-rec" title="Enregistrer une vidéo (R)"><svg><use href="#i-rec"/></svg><span>Vidéo</span></button>
+    <button id="btn-fly" class="primary" title="Voler à travers les pores (F)"><svg><use href="#i-fly"/></svg><span>Mode vol</span></button>
+    <button id="btn-help" title="Aide et raccourcis"><svg><use href="#i-help"/></svg></button>
+  </nav>
+</header>
+
+<div class="layout">
+  <aside class="panel left" id="controls" aria-label="Paramètres"></aside>
+  <main class="viewport" id="viewport">
+    <canvas id="view"></canvas>
+    <div class="hud tl" id="hud-dims"></div>
+    <div class="hud tr" id="hud-legend" hidden></div>
+    <div class="hud bl" id="hud-status">Préparation…</div>
+    <div class="hud center" id="hud-busy" hidden><span class="spinner"></span><span id="busy-text">Calcul de la géométrie</span></div>
+    <div class="hud bc" id="hud-rec" hidden><span class="dot"></span> Enregistrement <span id="rec-time">0:00</span> · R pour arrêter</div>
+    <div class="hud fly" id="hud-fly" hidden><span id="fly-text">Vol dans les pores</span> · Échap pour sortir</div>
+  </main>
+  <aside class="panel right" id="metrics" aria-label="Mesures"></aside>
+</div>
+
+<dialog id="help">
+  <h2>Scaffold Studio</h2>
+  <p>Conçois un scaffold poreux, mesure sa morphologie, estime sa rigidité et simule la perfusion du milieu de culture à travers ses pores.</p>
+  <h3>Raccourcis</h3>
+  <ul class="keys">
+    <li><kbd>F</kbd> mode vol à travers les pores</li>
+    <li><kbd>H</kbd> masquer l'interface (mode capture)</li>
+    <li><kbd>R</kbd> démarrer ou arrêter l'enregistrement vidéo</li>
+    <li><kbd>P</kbd> capture d'image</li>
+    <li><kbd>Espace</kbd> lancer ou arrêter la perfusion</li>
+    <li><kbd>Échap</kbd> quitter le mode vol</li>
+  </ul>
+  <h3>Méthodes</h3>
+  <p>Géométrie : surfaces minimales triplement périodiques, seuil calculé pour atteindre la porosité visée, maillage par surface nets. Mesures : diamètre de pore et épaisseur de strut par sphère inscrite (transformée de distance exacte). Rigidité : loi de Gibson-Ashby. Perfusion : méthode de Boltzmann sur réseau D3Q19, perméabilité par la loi de Darcy, cisaillement pariétal estimé par le gradient de vitesse près de la paroi.</p>
+  <p class="note">Les valeurs mécaniques et de cisaillement sont des estimations de conception, à confirmer par éléments finis et par essais.</p>
+  <form method="dialog"><button class="primary">Fermer</button></form>
+</dialog>
+
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
