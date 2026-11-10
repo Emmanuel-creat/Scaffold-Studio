@@ -40,7 +40,8 @@ Ces compromis se calculent d'habitude dans plusieurs logiciels lourds (CAO, mail
 | Cisaillement | Carte de cisaillement pariétal, part de la surface dans la fenêtre cible, histogramme comparé à la plage de la littérature (0,05 à 25 mPa) |
 | Solveur | Calcul sur carte graphique (WebGPU) avec repli automatique sur le processeur, pression imposée sur l'éprouvette entière, milieu de culture, sérum ou sang (Carreau) |
 | Biologie | Oxygène dissous en perfusion et en culture statique (advection, diffusion, consommation de Michaelis-Menten aux parois), carte d'oxygène sur la surface, zones hypoxiques, ensemencement par perfusion animé avec efficacité et répartition en hauteur, croissance du tissu pilotée par la courbure jour par jour |
-| Visualisation | Coupe selon X, Y ou Z, transparence, rotation, mode vol à travers les pores |
+| Visualisation | Coupe selon X, Y ou Z, transparence, rotation, mode vol à travers les pores, lignes de courant, thème clair |
+| Studio | Formats 1:1, 4:5, 9:16 et 16:9, rendu réaliste, profondeur de champ, titre et barre d'échelle incrustés, rendu 4K, séquences de caméra enregistrées (tour, grue, plongée, vues clés) |
 | Projet | Annuler et rétablir, enregistrement et ouverture d'un projet, lien partageable, aperçu rapide puis résolution finale, interface en français ou en anglais |
 | Exports | STL et 3MF pour l'impression, VTK surface avec les cartes (ParaView), maillage voxel Abaqus avec essai de compression, champ de vitesse VTK, mesures CSV, rapport de conception HTML imprimable en PDF, capture PNG, vidéo MP4 ou WebM |
 
@@ -107,6 +108,15 @@ npm run build     # version de production dans dist/
 4. Appuyer sur F pour le vol à travers les pores (environ 26 secondes de traversée).
 5. R pour arrêter : la vidéo est téléchargée en MP4 si le navigateur sait l'encoder, sinon en WebM.
 
+Le studio image et vidéo prépare directement un post LinkedIn :
+
+- Format carré, portrait 4:5 pour le fil, vertical 9:16 pour une story ou un reel, paysage 16:9 ; la caméra se recadre seule.
+- Rendu réaliste (halo et vignettage, anticrénelage conservé), profondeur de champ réglable.
+- Titre et sous-titre incrustés, barre d'échelle en millimètres, présents dans l'image et la vidéo.
+- Rendu 4K en PNG (grand côté de 3 840 px) hors écran.
+- Séquences de caméra enregistrées seules : tour complet, grue montante, plongée vers le coeur, ou trajet libre passant par des vues clés.
+- Lignes de courant en tubes colorés par la vitesse, thème clair pour les captures sur fond blanc.
+
 ## Méthodes et validation
 
 Les méthodes sont détaillées dans le [cahier des charges](docs/CAHIER_DES_CHARGES.md). En résumé :
@@ -134,6 +144,7 @@ Tests automatiques :
 | Croissance tissulaire | canal cylindrique à moitié comblé au temps prévu (0,58 pour 0,5) |
 | Ensemencement | sédimentation sans écoulement, cellules emportées par un écoulement rapide |
 | Viscosité du sang | Carreau, rhéofluidifiant entre μ0 et μ∞ |
+| Studio | tailles 4K exactes par format, tour complet à distance constante, passage par les vues clés, lignes de courant droites dans un écoulement uniforme |
 | 9 surfaces TPMS | porosité visée atteinte, anisotropie, rotation, formes et peau vérifiées |
 | Import STL | volume d'un cube voxelisé à 8 % près |
 | Projet | lien partageable aller-retour, annuler et rétablir |
@@ -172,6 +183,7 @@ src/
   fabrication.js   couches, temps, plateau, coût
   exporters.js     3MF, VTK, Abaqus, champ de vitesse
   report.js        rapport de conception HTML
+  studio.js        formats, post-traitement, titres, rendu 4K, séquences de caméra
   project.js       projet, lien partageable, historique
   i18n.js          traduction français et anglais
 tests/             tests unitaires (Vitest)

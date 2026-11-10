@@ -193,3 +193,27 @@ table.cmp td.down { color: var(--warn); }
 .chart .line.tis { stroke: #d7838a; }
 .chart .bar.tis { fill: #d7838a; opacity: .8; }
 .engine { display: inline-block; font: 500 10px var(--mono); padding: 1px 5px; border: 1px solid var(--line); border-radius: 3px; color: var(--muted); margin-left: 4px; }
+.viewport canvas.framed { box-shadow: 0 0 0 1px var(--line), 0 12px 40px rgba(0,0,0,.45); }
+.textfield { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+.textfield input { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; color: var(--ink); }
+.stack { display: flex; flex-direction: column; gap: 8px; }
+
+/* Theme clair (point 70) */
+:root[data-theme=light] {
+  --bg: #eef1f5;
+  --panel: #ffffff;
+  --panel-2: #f3f5f8;
+  --line: #d9dee6;
+  --ink: #18202b;
+  --muted: #5d6877;
+  --accent: #1f9e8a;
+  --accent-ink: #ffffff;
+  --bone: #b59c64;
+  --warn: #b7791f;
+  --bad: #c53b49;
+  --good: #2f8f45;
+  color-scheme: light;
+}
+:root[data-theme=light] .viewport { background: radial-gradient(circle at 50% 40%, #ffffff 0%, #dfe4eb 75%); }
+:root[data-theme=light] .hud.tr, :root[data-theme=light] .hud.br, :root[data-theme=light] .hud.bc, :root[data-theme=light] .hud.fly { background: rgba(255,255,255,.88); color: var(--ink); }
+:root[data-theme=light] .hud.center { background: rgba(255,255,255,.3); }

@@ -10,9 +10,10 @@ export const DEFAULT = {
   process: 'lpbf', resKey: 'mid', smooth: 2,
   target: { strut: 400, E: 3 },
   gaFits: {},
-  view: { cut: 100, cutAxis: 'x', opacity: 100, autoRotate: true, particles: true, map: 'none', layers: false, plate: false },
-  flow: { inlet: 0.5, particles: 5000, speed: 3, wss: false, wssLow: 0.1, wssHigh: 10, bc: 'force', fluid: 'medium', gpu: true },
+  view: { cut: 100, cutAxis: 'x', opacity: 100, autoRotate: true, particles: true, map: 'none', layers: false, plate: false, light: false },
+  flow: { inlet: 0.5, particles: 5000, speed: 3, wss: false, wssLow: 0.1, wssHigh: 10, bc: 'force', fluid: 'medium', gpu: true, streamlines: false },
   bio: { vmax: 2, density: 1000, km: 0.005, c0: 0.2, hypoxia: 0.02, cells: 2000, attach: 0.3, lambda: 2.5, day: 14, showTissue: true },
+  studio: { format: 'free', realism: false, bloom: 0.25, dof: false, focus: 50, title: '', subtitle: '', titleOn: false, scaleBarOn: false, path: 'orbit', duration: 10, record: true, keys: [] },
 };
 
 export const PRESETS = [

@@ -200,3 +200,81 @@ export function flyPath(field, tries = 24) {
   curve.arcLengthDivisions = 2000;
   return { curve, length: curve.getLength() };
 }
+
+// Lignes de courant depuis la face d'entree (point 64) : integration de Runge-Kutta 2 a pas
+// constant en longueur, arret a la sortie, dans le solide ou en zone morte.
+export function streamlines(field, { count = 160, maxPoints = 900, seed = 3 } = {}) {
+  const [X, Y, Z] = field.box;
+  const ds = Math.min(X, Y, Z) / 220;
+  const v = new Float32Array(3);
+  let a = seed;
+  const rand = () => { a = (a * 16807) % 2147483647; return a / 2147483647; };
+  const vmax = Math.max(field.maxPhys, 1e-12);
+  const lines = [];
+  for (let n = 0, tries = 0; n < count && tries < count * 40; tries++) {
+    let x = X * rand(), y = Y * rand(), z = Z * 0.01;
+    if (!field.isFluid(x, y, z)) continue;
+    const pts = [x, y, z], spd = [];
+    field.sample(x, y, z, v);
+    spd.push(Math.hypot(v[0], v[1], v[2]) / vmax);
+    for (let i = 0; i < maxPoints; i++) {
+      field.sample(x, y, z, v);
+      let s = Math.hypot(v[0], v[1], v[2]);
+      if (s < vmax * 2e-3) break;
+      const mx = x + (v[0] / s) * ds * 0.5, my = y + (v[1] / s) * ds * 0.5, mz = z + (v[2] / s) * ds * 0.5;
+      field.sample(mx, my, mz, v);
+      s = Math.hypot(v[0], v[1], v[2]);
+      if (s < vmax * 2e-3) break;
+      x += (v[0] / s) * ds; y += (v[1] / s) * ds; z += (v[2] / s) * ds;
+      if (x < 0 || y < 0 || z < 0 || x > X || y > Y || z > Z || !field.isFluid(x, y, z)) break;
+      pts.push(x, y, z); spd.push(s / vmax);
+    }
+    if (pts.length < 30) continue;
+    lines.push({ pts: Float32Array.from(pts), speed: Float32Array.from(spd) });
+    n++;
+  }
+  return lines;
+}
+
+// Tubes colores par la vitesse, regroupes en une seule geometrie.
+export function streamlineMesh(lines, radius) {
+  const radial = 5;
+  const geos = [];
+  for (const l of lines) {
+    const n = l.pts.length / 3;
+    const pts = [];
+    for (let i = 0; i < n; i++) pts.push(new THREE.Vector3(l.pts[i * 3], l.pts[i * 3 + 1], l.pts[i * 3 + 2]));
+    const curve = new THREE.CatmullRomCurve3(pts);
+    const seg = Math.min(n, 240);
+    const g = new THREE.TubeGeometry(curve, seg, radius, radial, false);
+    const col = new Float32Array(g.attributes.position.count * 3);
+    for (let i = 0; i <= seg; i++) {
+      const sp = l.speed[Math.min(n - 1, Math.round((i / seg) * (n - 1)))];
+      const c = particleColor(Math.min(1, sp));
+      for (let r = 0; r <= radial; r++) { const k = (i * (radial + 1) + r) * 3; col[k] = c[0]; col[k + 1] = c[1]; col[k + 2] = c[2]; }
+    }
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    geos.push(g);
+  }
+  return mergeAll(geos);
+}
+
+function mergeAll(geos) {
+  let nv = 0, ni = 0;
+  for (const g of geos) { nv += g.attributes.position.count; ni += g.index.count; }
+  const pos = new Float32Array(nv * 3), nor = new Float32Array(nv * 3), col = new Float32Array(nv * 3), idx = new Uint32Array(ni);
+  let ov = 0, oi = 0;
+  for (const g of geos) {
+    pos.set(g.attributes.position.array, ov * 3); nor.set(g.attributes.normal.array, ov * 3); col.set(g.attributes.color.array, ov * 3);
+    const gi = g.index.array;
+    for (let i = 0; i < gi.length; i++) idx[oi + i] = gi[i] + ov;
+    ov += g.attributes.position.count; oi += gi.length;
+    g.dispose();
+  }
+  const out = new THREE.BufferGeometry();
+  out.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  out.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+  out.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  out.setIndex(new THREE.BufferAttribute(idx, 1));
+  return out;
+}

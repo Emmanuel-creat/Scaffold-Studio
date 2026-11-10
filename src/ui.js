@@ -2,6 +2,7 @@
 import { SURFACES, MODES, SHAPES, GRADIENTS } from './tpms.js';
 import { MATERIALS, PROCESSES } from './metrics.js';
 import { FLUIDS } from './bio.js';
+import { FORMATS, PATHS } from './studio.js';
 import { t } from './i18n.js';
 
 const get = (o, path) => path.split('.').reduce((a, k) => (a == null ? a : a[k]), o);
@@ -19,7 +20,7 @@ export function el(tag, attrs = {}, ...kids) {
 }
 
 export function buildControls(root, state, cb) {
-  const { onGeometry, onFlow, onView, onRunFlow, onAction, beforeChange, onSolver, onBio } = cb;
+  const { onGeometry, onFlow, onView, onRunFlow, onAction, beforeChange, onSolver, onBio, onStudio } = cb;
   const refreshers = [];
   const refresh = () => refreshers.forEach((f) => f());
   // Chaque commande enregistre l'etat dans l'historique avant de le modifier.
@@ -80,9 +81,17 @@ export function buildControls(root, state, cb) {
   };
 
   const check = (id, label, path, onchange) => {
-    const input = el('input', { type: 'checkbox', id, onchange: (e) => { beforeChange && beforeChange(); set(state, path, e.target.checked); onchange(); } });
+    const input = el('input', { type: 'checkbox', id, onchange: (e) => { beforeChange && beforeChange(); set(state, path, e.target.checked); refresh(); onchange(); } });
     refreshers.push(() => { input.checked = !!get(state, path); });
     return el('label', { class: 'check', for: id }, input, label);
+  };
+
+  const text = (id, label, path, onchange, placeholder = '') => {
+    const input = el('input', { type: 'text', id, class: 'text', placeholder, maxlength: 90 });
+    input.addEventListener('focus', () => beforeChange && beforeChange());
+    input.addEventListener('input', () => { set(state, path, input.value); onchange(); });
+    refreshers.push(() => { if (document.activeElement !== input) input.value = get(state, path) || ''; });
+    return el('label', { for: id, class: 'textfield' }, label, input);
   };
 
   const showIf = (node, pred) => { refreshers.push(() => { node.hidden = !pred(); }); return node; };
@@ -172,6 +181,7 @@ export function buildControls(root, state, cb) {
       slider('pspeed', t('Accélération de l\'animation'), 'flow.speed', { min: 0.5, max: 20, step: 0.5, unit: '×', digits: 1 }, onView, onView),
       slider('pcount', t('Particules'), 'flow.particles', { min: 500, max: 20000, step: 500, digits: 0 }, onFlow),
       check('wss', t('Carte de cisaillement pariétal'), 'flow.wss', onFlow),
+      check('streamlines', t('Lignes de courant'), 'flow.streamlines', onFlow),
       el('div', { class: 'row2' },
         num('wss-lo', t('Cible min (mPa)'), 'flow.wssLow', onFlow, { min: 0.001, max: 10000, step: 0.1 }),
         num('wss-hi', t('Cible max (mPa)'), 'flow.wssHigh', onFlow, { min: 0.001, max: 10000, step: 0.1 })),
@@ -205,6 +215,25 @@ export function buildControls(root, state, cb) {
       check('showp', t('Afficher les particules'), 'view.particles', onView),
       check('layers', t('Aperçu des couches d\'impression'), 'view.layers', onView),
       check('plate', t('Plateau de fabrication'), 'view.plate', onView),
+      check('theme', t('Thème clair'), 'view.light', onView),
+    ),
+    section('studio', t('Studio image et vidéo'), false,
+      field('format', t('Format'), select('format', 'studio.format', FORMATS, onStudio)),
+      check('realism', t('Rendu réaliste (halo, vignettage)'), 'studio.realism', onStudio),
+      showIf(slider('bloom', t('Intensité du halo'), 'studio.bloom', { min: 0, max: 1.5, step: 0.05, digits: 2 }, onStudio, onStudio), () => state.studio.realism),
+      check('dof', t('Profondeur de champ'), 'studio.dof', onStudio),
+      showIf(slider('focus', t('Mise au point'), 'studio.focus', { min: 0, max: 100, step: 1, unit: '%', digits: 0, tip: t('0 % au premier plan, 100 % au fond') }, onStudio, onStudio), () => state.studio.dof),
+      check('title-on', t('Titre incrusté'), 'studio.titleOn', onStudio),
+      showIf(el('div', { class: 'stack' },
+        text('title', t('Titre'), 'studio.title', onStudio, t('Scaffold gyroïde titane')),
+        text('subtitle', t('Sous-titre'), 'studio.subtitle', onStudio, t('Porosité 70 %, perfusion 0,5 mm/s'))), () => state.studio.titleOn),
+      check('scalebar', t('Barre d\'échelle'), 'studio.scaleBarOn', onStudio),
+      button('btn-hires', t('Rendu 4K (PNG)'), 'hires'),
+      field('path', t('Mouvement de caméra'), select('path', 'studio.path', PATHS, onStudio)),
+      slider('duration', t('Durée'), 'studio.duration', { min: 4, max: 30, step: 1, unit: 's', digits: 0 }, onStudio),
+      check('shot-rec', t('Enregistrer la séquence en vidéo'), 'studio.record', onStudio),
+      showIf(el('div', { class: 'row2' }, button('btn-addkey', t('Ajouter la vue'), 'addKey', 'btn'), button('btn-clearkeys', t('Effacer les vues'), 'clearKeys', 'btn')), () => state.studio.path === 'keys'),
+      button('btn-shot', t('Tourner la séquence'), 'shot', 'btn wide primary'),
     ),
   );
 

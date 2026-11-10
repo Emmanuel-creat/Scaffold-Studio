@@ -1,5 +1,17 @@
 # Journal des versions
 
+## 1.5.0 (novembre 2026)
+
+Cinquième vague : image et vidéo.
+
+- Studio image et vidéo : formats 1:1, 4:5, 9:16 et 16:9 avec recadrage automatique de la caméra.
+- Rendu réaliste (halo, vignettage, anticrénelage multi-échantillonné) et profondeur de champ.
+- Titre, sous-titre et barre d'échelle incrustés dans les captures et les vidéos.
+- Rendu 4K hors écran en PNG.
+- Séquences de caméra enregistrées automatiquement : tour complet, grue, plongée, vues clés.
+- Lignes de courant en tubes colorés par la vitesse.
+- Thème clair pour l'interface et la scène.
+
 ## 1.4.0 (novembre 2026)
 
 Quatrième vague : biologie et perfusion avancée.

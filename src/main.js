@@ -5,7 +5,8 @@ import { STLExporter } from 'three/examples/jsm/exporters/STLExporter.js';
 import { PRESETS, applyPreset } from './presets.js';
 import { buildControls } from './ui.js';
 import { renderMetrics, pressureDrop, snapshotForCompare } from './panel.js';
-import { FlowField, Particles, wallShear, flyPath, WSS_RANGE } from './flow.js';
+import { FlowField, Particles, wallShear, flyPath, WSS_RANGE, streamlines, streamlineMesh } from './flow.js';
+import { Studio, shotPose } from './studio.js';
 import { specimenBox, SURFACES, fitWholeCells, gridSize, rotationMatrix, makeFieldFn } from './tpms.js';
 import { buildEstimate } from './fabrication.js';
 import { materialOf, porosityForE, PROCESSES } from './metrics.js';
@@ -59,13 +60,20 @@ renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.05;
 renderer.localClippingEnabled = true;
 const scene = new THREE.Scene();
-scene.background = (() => {
+// Fond degrade, sombre ou clair selon le theme (point 70).
+const BACKGROUNDS = {};
+function backgroundFor(theme) {
+  if (BACKGROUNDS[theme]) return BACKGROUNDS[theme];
   const c = document.createElement('canvas'); c.width = 16; c.height = 512;
   const g = c.getContext('2d'); const grd = g.createLinearGradient(0, 0, 0, 512);
-  grd.addColorStop(0, '#1b2333'); grd.addColorStop(0.55, '#10141c'); grd.addColorStop(1, '#07090d');
+  const stops = theme === 'light' ? ['#f4f6f9', '#e3e8ef', '#cfd6e0'] : ['#1b2333', '#10141c', '#07090d'];
+  grd.addColorStop(0, stops[0]); grd.addColorStop(0.55, stops[1]); grd.addColorStop(1, stops[2]);
   g.fillStyle = grd; g.fillRect(0, 0, 16, 512);
-  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
-})();
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+  BACKGROUNDS[theme] = t;
+  return t;
+}
+scene.background = backgroundFor('dark');
 const pmrem = new THREE.PMREMGenerator(renderer);
 scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
 const camera = new THREE.PerspectiveCamera(40, 1, 0.01, 1000);
@@ -104,11 +112,16 @@ function applyLook() {
   frontMat.needsUpdate = true;
 }
 
+const studio = new Studio({ renderer, scene, camera, canvas, viewport });
 function resize() {
-  const r = viewport.getBoundingClientRect();
-  renderer.setSize(r.width, r.height, false);
-  camera.aspect = r.width / Math.max(r.height, 1);
-  camera.updateProjectionMatrix();
+  studio.settings = state.studio;
+  studio.layout();
+}
+function applyTheme() {
+  const light = !!state.view.light;
+  document.documentElement.dataset.theme = light ? 'light' : 'dark';
+  if (!app.fly) scene.background = backgroundFor(light ? 'light' : 'dark');
+  studio.theme = light ? 'light' : 'dark';
 }
 new ResizeObserver(resize).observe(viewport);
 
@@ -122,6 +135,17 @@ function frameCamera(reset) {
   controls.target.copy(c);
   camera.near = r * 0.01; camera.far = r * 100;
   camera.updateProjectionMatrix();
+}
+
+// Recule la camera pour que la piece tienne dans le cadre, quel que soit le format (point 68).
+function fitView() {
+  const [X, Y, Z] = specimenBox(state.shape);
+  const r = Math.hypot(X, Y, Z) / 2;
+  const v = THREE.MathUtils.degToRad(camera.fov);
+  const h = 2 * Math.atan(Math.tan(v / 2) * camera.aspect);
+  const dist = (r / Math.sin(Math.min(v, h) / 2)) * 1.04;
+  const dir = camera.position.clone().sub(controls.target).normalize();
+  camera.position.copy(controls.target).addScaledVector(dir, dist);
 }
 
 // ---------- Geometrie (worker) ----------
@@ -232,6 +256,7 @@ function stopFlow(clear) {
   flowWorker.postMessage({ cmd: 'stop' });
   if (app.flowStatus.state === 'running') app.flowStatus.state = clear ? 'idle' : 'stopped';
   if (clear) {
+    if (app.stream) { root.remove(app.stream.mesh); app.stream.mesh.geometry.dispose(); app.stream = null; }
     app.flow = null; app.wss = null; app.flowStatus = { state: 'idle' };
     clearBio(false);
     if (app.particles) { root.remove(app.particles.object); app.particles.dispose(); app.particles = null; }
@@ -255,6 +280,7 @@ flowWorker.onmessage = (e) => {
     ctl.flowBtn.innerHTML = `<svg><use href="#i-play"/></svg> ${t('Relancer la perfusion')}`;
     updatePanel();
     if (pendingBio && app.flow) { const c = pendingBio; pendingBio = null; runBio(c); }
+    updateStreamlines();
     return;
   }
   app.flow = new FlowField(d.field, state);
@@ -768,7 +794,7 @@ function exportCsv() {
   download(new Blob(['﻿' + csv], { type: 'text/csv' }), `${baseName()}_mesures.csv`);
 }
 function snapshot() {
-  renderer.render(scene, camera);
+  studio.render(focusDistance());
   canvas.toBlob((b) => b && download(b, `${baseName()}.png`), 'image/png');
 }
 document.getElementById('btn-photo').onclick = snapshot;
@@ -795,6 +821,62 @@ function toggleRecord() {
   document.getElementById('hud-rec').hidden = false;
 }
 document.getElementById('btn-rec').onclick = toggleRecord;
+
+// ---------- Studio : rendu haute definition, sequences de camera, lignes de courant ----------
+function focusDistance() { return camera.position.distanceTo(controls.target); }
+async function renderHiRes() {
+  busy(true, t('Rendu haute définition'));
+  await new Promise((r) => setTimeout(r, 30));
+  const { blob, W, H } = await studio.renderHiRes(focusDistance());
+  busy(false);
+  if (blob) download(blob, `${baseName()}_${W}x${H}.png`);
+  status(`${t('Image rendue en')} ${W} × ${H} px`);
+}
+function startShot() {
+  const s = state.studio;
+  if (s.path === 'keys' && s.keys.length < 2) { status(t('Ajoute au moins deux vues clés')); return; }
+  if (app.fly) exitFly();
+  const start = { center: controls.target.clone(), pos: camera.position.clone() };
+  if (s.path === 'keys') { camera.position.fromArray(s.keys[0].pos); controls.target.fromArray(s.keys[0].target); }
+  app.shot = { t0: performance.now(), dur: s.duration * 1000, path: s.path, start, keys: s.keys.slice(), rec: false };
+  controls.enabled = false;
+  if (s.record && !app.recorder) { toggleRecord(); app.shot.rec = true; }
+  status(t('Séquence en cours, Échap pour arrêter'));
+}
+function stopShot() {
+  if (!app.shot) return;
+  if (app.shot.rec && app.recorder) toggleRecord();
+  app.shot = null;
+  controls.enabled = true;
+  status(t('Séquence terminée'));
+}
+function updateShot() {
+  const sh = app.shot;
+  const u = Math.min(1, (performance.now() - sh.t0) / sh.dur);
+  const p = shotPose(sh.path, u, sh.start, sh.keys);
+  camera.position.copy(p.pos);
+  controls.target.copy(p.target);
+  camera.lookAt(p.target);
+  if (u >= 1) stopShot();
+}
+function addKey() {
+  state.studio.keys.push({ pos: camera.position.toArray(), target: controls.target.toArray() });
+  status(`${state.studio.keys.length} ${t('vues clés')}`);
+  updatePanel(); saveSession(); ctl.refresh();
+}
+function clearKeys() { state.studio.keys = []; status(t('Vues clés effacées')); saveSession(); ctl.refresh(); }
+
+const streamMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.35, metalness: 0, emissive: 0x0b1a2a, clippingPlanes: [clip] });
+function updateStreamlines() {
+  const want = state.flow.streamlines && app.flow && app.flowStatus.state !== 'running';
+  if (app.stream && (!want || app.stream.flow !== app.flow)) { root.remove(app.stream.mesh); app.stream.mesh.geometry.dispose(); app.stream = null; }
+  if (!want || app.stream) return;
+  const lines = streamlines(app.flow, { count: 120 });
+  if (!lines.length) return;
+  const mesh = new THREE.Mesh(streamlineMesh(lines, Math.min(...specimenBox(state.shape)) * 0.0035), streamMat);
+  root.add(mesh);
+  app.stream = { mesh, flow: app.flow };
+}
 document.getElementById('btn-fly').onclick = () => (app.fly ? exitFly() : enterFly());
 document.getElementById('btn-help').onclick = () => document.getElementById('help').showModal();
 
@@ -803,7 +885,7 @@ window.addEventListener('keydown', (e) => {
   const k = e.key.toLowerCase();
   if (k === 'h' && !e.ctrlKey) document.body.classList.toggle('capture');
   else if (k === 'f' && !e.ctrlKey && !e.metaKey) (app.fly ? exitFly() : enterFly());
-  else if (k === 'escape') { exitFly(); document.body.classList.remove('capture'); }
+  else if (k === 'escape') { stopShot(); exitFly(); document.body.classList.remove('capture'); }
   else if (k === 'r' && !e.ctrlKey && !e.metaKey) toggleRecord();
   else if (k === 'p' && !e.ctrlKey && !e.metaKey) snapshot();
   else if (k === ' ') { e.preventDefault(); onRunFlow(); }
@@ -1014,6 +1096,14 @@ function onAction(name) {
     runBio(name);
   } else if (name === 'replaySeed') {
     if (app.bio.seed) showSeeding(app.bio.seed);
+  } else if (name === 'hires') {
+    renderHiRes();
+  } else if (name === 'shot') {
+    if (app.shot) stopShot(); else startShot();
+  } else if (name === 'addKey') {
+    addKey();
+  } else if (name === 'clearKeys') {
+    clearKeys();
   } else if (name === 'importStl') {
     stlInput.click();
   }
@@ -1033,6 +1123,8 @@ presetSel.onchange = () => {
 const callbacks = {
   onGeometry: requestGeometry,
   onFlow: () => {
+    if (state.flow.streamlines && !app.flow && app.flowStatus.state !== 'running') startFlow();
+    updateStreamlines();
     if (app.flow) { app.flow.setInlet(state.flow.inlet); }
     if (app.particles && app.particles.count !== state.flow.particles && app.flow) { ensureParticles(); app.particles.setField(app.flow); }
     if (state.flow.wss) computeWss(); else { app.wss = null; refreshColors(); }
@@ -1040,7 +1132,7 @@ const callbacks = {
     saveSession();
   },
   onView: () => {
-    refreshColors(); applyView(); saveSession();
+    refreshColors(); applyView(); applyTheme(); saveSession();
     if (state.view.plate !== app.plateShown) {
       app.plateShown = state.view.plate;
       if (state.view.plate) { const b = buildEstimate(state, app.metrics); const r = Math.max(...b.plate); const [cx, cy] = app.plateCenter || [0, 0]; camera.position.set(cx + r * 0.35, cy - r * 0.75, r * 0.6); controls.target.set(cx, cy, 0); controls.autoRotate = false; camera.far = r * 20; camera.updateProjectionMatrix(); }
@@ -1050,6 +1142,11 @@ const callbacks = {
   onRunFlow,
   onAction,
   beforeChange,
+  onStudio: () => {
+    resize();
+    if (state.studio.format !== app.lastFormat) { app.lastFormat = state.studio.format; fitView(); }
+    saveSession();
+  },
   onSolver: () => { stopFlow(true); updatePanel(); saveSession(); },
   onBio: () => { showTissue(); updatePanel(); saveSession(); },
 };
@@ -1071,7 +1168,7 @@ updateHistoryButtons();
 const clock = new THREE.Clock();
 renderer.setAnimationLoop(() => {
   const dt = Math.min(clock.getDelta(), 0.05);
-  if (app.fly) updateFly(dt); else controls.update();
+  if (app.shot) updateShot(); else if (app.fly) updateFly(dt); else controls.update();
   if (app.particles && app.flow && state.view.particles) {
     app.particles.update(dt, state.flow.speed, state.cell * 0.12);
   }
@@ -1080,9 +1177,12 @@ renderer.setAnimationLoop(() => {
     const s = Math.floor((performance.now() - app.recT0) / 1000);
     document.getElementById('rec-time').textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
   }
-  renderer.render(scene, camera);
+  studio.settings = state.studio;
+  studio.render(focusDistance());
 });
 
-window.scaffoldStudio = { app, state, history };
+window.scaffoldStudio = { app, state, history, studio };
+applyTheme();
+app.lastFormat = state.studio.format;
 resize();
 requestGeometry();
