@@ -43,7 +43,7 @@ export class FlowField {
   }
   isFluid(x, y, z) {
     if (this.fn.sdf(x, y, z) > 0) return false;
-    return this.fn.tpms(x, y, z) >= 0;
+    return this.fn.value(x, y, z) >= 0;
   }
   cellSize() { return this.size[0] / this.nx; }
 }

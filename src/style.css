@@ -67,6 +67,20 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 .progress { height: 3px; background: var(--line); border-radius: 2px; overflow: hidden; }
 .progress > i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .3s; }
 
+.actions .group { display: flex; gap: 2px; padding-right: 6px; margin-right: 2px; border-right: 1px solid var(--line); }
+.actions .lang { font: 600 11px var(--mono); min-width: 34px; justify-content: center; }
+.field > .lab .numwrap { display: inline-flex; align-items: baseline; gap: 4px; }
+.num { width: 64px !important; padding: 1px 4px !important; text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; background: transparent !important; border-color: transparent !important; }
+.num:hover, .num:focus { border-color: var(--line) !important; background: var(--panel-2) !important; }
+.numwrap small { color: var(--muted); font-size: 11px; min-width: 22px; }
+.inverse { display: flex; flex-direction: column; gap: 6px; padding: 8px; border: 1px dashed var(--line); border-radius: 6px; }
+.dims { display: flex; flex-direction: column; gap: 6px; }
+.tensor { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.tensor div { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 6px; display: flex; flex-direction: column; gap: 2px; }
+.tensor b { font: 600 10px var(--mono); color: var(--muted); }
+.tensor span { font: 12px var(--mono); }
+.metric .name[title] { text-decoration: underline dotted color-mix(in srgb, var(--muted) 50%, transparent); text-underline-offset: 3px; cursor: help; }
+
 /* Panneau mesures */
 .m-group { padding: 12px 14px; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 12px; }
 .m-group h3 { margin: 0; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); font-weight: 650; }

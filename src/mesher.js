@@ -121,3 +121,36 @@ export function meshVolumeArea(positions, indices) {
   }
   return { volume: vol, area };
 }
+
+// Lissage de Taubin (lambda / mu) : lisse les marches d'escalier sans retrecir la piece.
+export function taubin(mesh, iterations = 4, lambda = 0.5, mu = -0.53) {
+  const { positions, indices } = mesh;
+  const n = positions.length / 3;
+  const deg = new Uint32Array(n + 1);
+  for (let t = 0; t < indices.length; t++) deg[indices[t] + 1] += 2;
+  for (let i = 0; i < n; i++) deg[i + 1] += deg[i];
+  const adj = new Uint32Array(deg[n]);
+  const fill = deg.slice(0, n);
+  for (let t = 0; t < indices.length; t += 3) {
+    const a = indices[t], b = indices[t + 1], c = indices[t + 2];
+    adj[fill[a]++] = b; adj[fill[a]++] = c;
+    adj[fill[b]++] = c; adj[fill[b]++] = a;
+    adj[fill[c]++] = a; adj[fill[c]++] = b;
+  }
+  const tmp = new Float32Array(positions.length);
+  const pass = (f) => {
+    for (let i = 0; i < n; i++) {
+      let sx = 0, sy = 0, sz = 0;
+      const s = deg[i], e = deg[i + 1];
+      for (let k = s; k < e; k++) { const j = adj[k] * 3; sx += positions[j]; sy += positions[j + 1]; sz += positions[j + 2]; }
+      const m = e - s || 1, o = i * 3;
+      tmp[o] = positions[o] + f * (sx / m - positions[o]);
+      tmp[o + 1] = positions[o + 1] + f * (sy / m - positions[o + 1]);
+      tmp[o + 2] = positions[o + 2] + f * (sz / m - positions[o + 2]);
+    }
+    positions.set(tmp);
+  };
+  for (let it = 0; it < iterations; it++) { pass(lambda); pass(mu); }
+  mesh.normals = vertexNormals(positions, indices);
+  return mesh;
+}

@@ -1,134 +1,189 @@
 // Construction du panneau de parametres a partir d'une description declarative.
-import { SURFACES, MODES } from './tpms.js';
+import { SURFACES, MODES, SHAPES, GRADIENTS } from './tpms.js';
 import { MATERIALS, PROCESSES } from './metrics.js';
+import { t } from './i18n.js';
 
-const get = (o, path) => path.split('.').reduce((a, k) => a[k], o);
+const get = (o, path) => path.split('.').reduce((a, k) => (a == null ? a : a[k]), o);
 const set = (o, path, v) => { const ks = path.split('.'); const last = ks.pop(); ks.reduce((a, k) => a[k], o)[last] = v; };
 
-function el(tag, attrs = {}, ...kids) {
+export function el(tag, attrs = {}, ...kids) {
   const e = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) {
     if (k === 'class') e.className = v;
     else if (k.startsWith('on')) e.addEventListener(k.slice(2), v);
-    else if (v !== undefined && v !== null) e.setAttribute(k, v);
+    else if (v !== undefined && v !== null && v !== false) e.setAttribute(k, v === true ? '' : v);
   }
-  for (const c of kids.flat()) if (c != null) e.append(c);
+  for (const c of kids.flat()) if (c != null && c !== false) e.append(c);
   return e;
 }
 
-export function buildControls(root, state, { onGeometry, onFlow, onView, onRunFlow }) {
+export function buildControls(root, state, cb) {
+  const { onGeometry, onFlow, onView, onRunFlow, onAction, beforeChange } = cb;
   const refreshers = [];
   const refresh = () => refreshers.forEach((f) => f());
+  // Chaque commande enregistre l'etat dans l'historique avant de le modifier.
+  const geo = onGeometry;
 
-  const section = (title, open, ...body) => el('details', { class: 'sec', ...(open ? { open: '' } : {}) },
+  const section = (id, title, open, ...body) => el('details', { class: 'sec', id: `sec-${id}`, open },
     el('summary', {}, title), el('div', { class: 'sec-body' }, ...body));
 
-  const seg = (id, path, options, cb) => {
-    const wrap = el('div', { class: 'seg', role: 'group', id });
-    const btns = Object.entries(options).map(([v, label]) => {
-      const b = el('button', { type: 'button', 'data-v': v, onclick: () => { set(state, path, v); refresh(); cb(); } }, label);
+  const seg = (id, path, options, onchange, label) => {
+    const wrap = el('div', { class: 'seg', role: 'group', id, 'aria-label': label || id });
+    const btns = Object.entries(options).map(([v, lab]) => {
+      const b = el('button', { type: 'button', 'data-v': v, onclick: () => { beforeChange && beforeChange(); set(state, path, v); refresh(); onchange(); } }, lab);
       wrap.append(b);
       return b;
     });
-    refreshers.push(() => btns.forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === get(state, path)))));
+    refreshers.push(() => btns.forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === String(get(state, path))))));
     return wrap;
   };
 
-  const select = (id, path, options, cb) => {
-    const s = el('select', { id, onchange: (e) => { set(state, path, e.target.value); cb(); } },
-      ...Object.entries(options).map(([v, o]) => el('option', { value: v }, typeof o === 'string' ? o : o.label)));
+  const select = (id, path, options, onchange) => {
+    const s = el('select', { id, onchange: (e) => { beforeChange && beforeChange(); set(state, path, e.target.value); refresh(); onchange(); } },
+      ...Object.entries(options).map(([v, o]) => el('option', { value: v }, t(typeof o === 'string' ? o : o.label))));
     refreshers.push(() => { s.value = get(state, path); });
     return s;
   };
 
-  const slider = (id, label, path, { min, max, step, scale = 1, unit = '', digits = 1 }, cb, live) => {
-    const out = el('output', { for: id });
+  const field = (labelFor, label, control, tip) => el('div', { class: 'field' },
+    el('div', { class: 'lab' }, el('label', { for: labelFor, title: tip }, label)), control);
+
+  // Curseur + saisie numerique directe (point 78).
+  const slider = (id, label, path, { min, max, step, scale = 1, unit = '', digits = 1, tip }, onchange, live) => {
+    const num = el('input', { type: 'number', class: 'num', id: `${id}-n`, min, max, step, 'aria-label': `${label} (${unit})` });
     const input = el('input', { type: 'range', id, min, max, step });
-    const show = () => { out.textContent = `${(get(state, path) * scale).toLocaleString('fr-FR', { minimumFractionDigits: digits, maximumFractionDigits: digits })} ${unit}`.trim(); };
-    input.addEventListener('input', () => { set(state, path, Number(input.value) / scale); show(); if (live) live(); });
-    input.addEventListener('change', () => cb());
-    refreshers.push(() => { input.value = get(state, path) * scale; show(); });
-    return el('div', { class: 'field' }, el('div', { class: 'lab' }, el('label', { for: id }, label), out), input);
+    const showNum = () => { num.value = (+(get(state, path) * scale).toFixed(digits)); };
+    input.addEventListener('pointerdown', () => beforeChange && beforeChange());
+    input.addEventListener('keydown', () => beforeChange && beforeChange());
+    input.addEventListener('input', () => { set(state, path, Number(input.value) / scale); showNum(); if (live) live(); });
+    input.addEventListener('change', () => onchange());
+    num.addEventListener('change', () => {
+      beforeChange && beforeChange();
+      const v = Math.min(max, Math.max(min, Number(String(num.value).replace(',', '.')) || min));
+      set(state, path, v / scale); input.value = v; showNum(); if (live) live(); onchange();
+    });
+    refreshers.push(() => { input.value = get(state, path) * scale; showNum(); });
+    return el('div', { class: 'field' },
+      el('div', { class: 'lab' }, el('label', { for: id, title: tip }, label), el('span', { class: 'numwrap' }, num, el('small', {}, unit))), input);
   };
 
-  const num = (id, label, path, cb) => {
-    const input = el('input', { type: 'number', id, min: 1, max: 40, step: 0.5 });
+  const num = (id, label, path, onchange, { min = 0.2, max = 60, step = 0.1 } = {}) => {
+    const input = el('input', { type: 'number', id, min, max, step });
     input.addEventListener('change', () => {
-      const v = Math.min(40, Math.max(1, Number(input.value) || 1));
-      set(state, path, v); input.value = v; cb();
+      beforeChange && beforeChange();
+      const v = Math.min(max, Math.max(min, Number(String(input.value).replace(',', '.')) || min));
+      set(state, path, v); input.value = v; onchange();
     });
     refreshers.push(() => { input.value = get(state, path); });
-    return el('label', {}, label, input);
+    return el('label', { for: id }, label, input);
   };
 
-  const check = (id, label, path, cb) => {
-    const input = el('input', { type: 'checkbox', id, onchange: (e) => { set(state, path, e.target.checked); cb(); } });
+  const check = (id, label, path, onchange) => {
+    const input = el('input', { type: 'checkbox', id, onchange: (e) => { beforeChange && beforeChange(); set(state, path, e.target.checked); onchange(); } });
     refreshers.push(() => { input.checked = !!get(state, path); });
     return el('label', { class: 'check', for: id }, input, label);
   };
 
-  const surfaces = Object.fromEntries(Object.entries(SURFACES).map(([k, v]) => [k, v.label]));
-  const cubeDims = el('div', { class: 'row3' }, num('dim-x', 'X (mm)', 'shape.x', onGeometry), num('dim-y', 'Y (mm)', 'shape.y', onGeometry), num('dim-z', 'Z (mm)', 'shape.z', onGeometry));
-  const cylDims = el('div', { class: 'row2' }, num('dim-d', 'Diamètre (mm)', 'shape.diameter', onGeometry), num('dim-h', 'Hauteur (mm)', 'shape.height', onGeometry));
-  refreshers.push(() => { cubeDims.hidden = state.shape.kind !== 'cube'; cylDims.hidden = state.shape.kind !== 'cylinder'; });
-  const gradP1 = slider('grad-p1', 'Porosité finale', 'gradient.p1', { min: 30, max: 92, step: 1, scale: 100, unit: '%', digits: 0 }, onGeometry);
+  const showIf = (node, pred) => { refreshers.push(() => { node.hidden = !pred(); }); return node; };
+  const button = (id, label, action, cls = 'btn wide') => el('button', { type: 'button', class: cls, id, onclick: () => onAction(action) }, label);
+
+  const surfaces = Object.fromEntries(Object.entries(SURFACES).map(([k, v]) => [k, t(v.label)]));
+  const kind = () => state.shape.kind;
+
+  const dims = el('div', { class: 'dims' },
+    showIf(el('div', { class: 'row3' }, num('dim-x', 'X (mm)', 'shape.x', geo), num('dim-y', 'Y (mm)', 'shape.y', geo), num('dim-z', 'Z (mm)', 'shape.z', geo)), () => kind() === 'cube' || kind() === 'cage'),
+    showIf(el('div', { class: 'row2' }, num('dim-d', t('Diamètre (mm)'), 'shape.diameter', geo), num('dim-h', t('Hauteur (mm)'), 'shape.height', geo)), () => kind() === 'cylinder'),
+    showIf(el('div', { class: 'row2' }, num('dim-cd', t('Diamètre (mm)'), 'shape.diameter', geo), num('dim-ct', t('Épaisseur (mm)'), 'shape.thickness', geo)), () => kind() === 'cup'),
+    showIf(el('div', { class: 'row2' },
+      showIf(num('dim-r', t('Rayon d\'angle (mm)'), 'shape.radius', geo, { min: 0, max: 20 }), () => kind() === 'cage'),
+      num('dim-hole', t('Trou central (mm)'), 'shape.hole', geo, { min: 0, max: 40 })), () => kind() !== 'cup' && kind() !== 'stl'),
+    showIf(el('p', { class: 'hint', id: 'stl-info' }), () => kind() === 'stl'),
+  );
+
   const gradHint = el('p', { class: 'hint' });
   refreshers.push(() => {
-    gradP1.hidden = state.gradient.kind === 'none';
-    gradHint.textContent = state.gradient.kind === 'axial' ? 'Porosité de la base (curseur du haut) vers le sommet.'
-      : state.gradient.kind === 'radial' ? 'Porosité du coeur (curseur du haut) vers la périphérie, comme le passage de l\'os spongieux à l\'os cortical.'
-      : 'Porosité uniforme dans tout le volume.';
+    gradHint.textContent = {
+      none: t('Porosité et cellule uniformes.'),
+      axial: t('De la base (valeurs du haut) vers le sommet.'),
+      radial: t('Du coeur vers la périphérie, comme l\'os spongieux vers l\'os cortical.'),
+      spherical: t('Du centre de la pièce vers l\'extérieur.'),
+      surface: t('Du coeur vers la surface, quelle que soit la forme : une coque dense autour d\'un coeur poreux.'),
+    }[state.gradient.kind];
   });
 
   const flowBtn = el('button', { type: 'button', class: 'btn wide primary', id: 'btn-flow', onclick: onRunFlow });
-  const progress = el('div', { class: 'progress' }, el('i', { id: 'flow-progress' }));
+  const progress = el('div', { class: 'progress', role: 'progressbar', 'aria-label': t('Progression de la perfusion') }, el('i', { id: 'flow-progress' }));
+  const custom = showIf(el('div', { class: 'row3' },
+    num('mat-e', 'E (GPa)', 'customMaterial.E', geo, { min: 0.001, max: 500, step: 0.1 }),
+    num('mat-sy', 'σy (MPa)', 'customMaterial.sy', geo, { min: 0.1, max: 3000, step: 1 }),
+    num('mat-rho', 'ρ (g/cm³)', 'customMaterial.rho', geo, { min: 0.1, max: 25, step: 0.01 })), () => state.material === 'custom');
 
   root.append(
-    section('Architecture', true,
-      el('div', { class: 'field' }, el('div', { class: 'lab' }, el('label', { for: 'type' }, 'Surface')), select('type', 'type', surfaces, onGeometry)),
-      seg('mode', 'mode', MODES, onGeometry),
-      slider('cell', 'Taille de cellule', 'cell', { min: 0.6, max: 5, step: 0.1, unit: 'mm', digits: 1 }, onGeometry),
-      slider('porosity', 'Porosité visée', 'porosity', { min: 30, max: 92, step: 1, scale: 100, unit: '%', digits: 0 }, onGeometry),
+    section('archi', t('Architecture'), true,
+      field('type', t('Surface'), select('type', 'type', surfaces, geo)),
+      seg('mode', 'mode', Object.fromEntries(Object.entries(MODES).map(([k, v]) => [k, t(v)])), geo, t('Mode')),
+      slider('cell', t('Taille de cellule'), 'cell', { min: 0.4, max: 6, step: 0.05, unit: 'mm', digits: 2, tip: t('Période de la surface, une cellule unité par période') }, geo),
+      slider('porosity', t('Porosité visée'), 'porosity', { min: 30, max: 95, step: 0.5, scale: 100, unit: '%', digits: 1, tip: t('Fraction de vide visée. Le seuil de la surface est calculé pour l\'atteindre exactement') }, geo),
+      el('div', { class: 'inverse' },
+        el('div', { class: 'row2' },
+          num('target-strut', t('Strut visé (µm)'), 'target.strut', () => {}, { min: 50, max: 3000, step: 10 }),
+          num('target-e', t('Rigidité visée (GPa)'), 'target.E', () => {}, { min: 0.01, max: 200, step: 0.1 })),
+        el('div', { class: 'row2' },
+          button('btn-inv-strut', t('Viser ce strut'), 'inverseStrut', 'btn'),
+          button('btn-inv-e', t('Viser cette rigidité'), 'inverseE', 'btn'))),
+      button('btn-fit', t('Ajuster aux cellules entières'), 'fit'),
     ),
-    section('Forme de l\'éprouvette', true,
-      seg('shape', 'shape.kind', { cube: 'Pavé', cylinder: 'Cylindre' }, onGeometry),
-      cubeDims, cylDims,
+    section('orient', t('Orientation et anisotropie'), false,
+      el('p', { class: 'hint' }, t('Étirer la cellule selon un axe imite l\'orientation des travées osseuses sous charge. La rotation oriente le réseau par rapport à l\'axe d\'impression.')),
+      slider('an-x', t('Étirement X'), 'aniso.x', { min: 0.5, max: 2.5, step: 0.05, unit: '×', digits: 2 }, geo),
+      slider('an-y', t('Étirement Y'), 'aniso.y', { min: 0.5, max: 2.5, step: 0.05, unit: '×', digits: 2 }, geo),
+      slider('an-z', t('Étirement Z'), 'aniso.z', { min: 0.5, max: 2.5, step: 0.05, unit: '×', digits: 2 }, geo),
+      slider('rot-x', t('Rotation X'), 'rotation.x', { min: -90, max: 90, step: 1, unit: '°', digits: 0 }, geo),
+      slider('rot-y', t('Rotation Y'), 'rotation.y', { min: -90, max: 90, step: 1, unit: '°', digits: 0 }, geo),
+      slider('rot-z', t('Rotation Z'), 'rotation.z', { min: -90, max: 90, step: 1, unit: '°', digits: 0 }, geo),
     ),
-    section('Gradient de porosité', false,
-      seg('gradient', 'gradient.kind', { none: 'Aucun', axial: 'Axial', radial: 'Radial' }, onGeometry),
-      gradHint, gradP1,
+    section('shape', t('Forme de la pièce'), true,
+      seg('shape', 'shape.kind', { ...Object.fromEntries(Object.entries(SHAPES).map(([k, v]) => [k, t(v)])), ...(state.shape.kind === 'stl' ? { stl: 'STL' } : {}) }, geo, t('Forme')),
+      dims,
+      button('btn-stl-import', t('Importer une forme STL'), 'importStl'),
+      showIf(el('div', { class: 'skin' },
+        slider('skin', t('Peau pleine'), 'skin.t', { min: 0, max: 2, step: 0.05, unit: 'mm', digits: 2, tip: t('Coque pleine autour du réseau, 0 pour aucune') }, geo),
+        seg('skin-faces', 'skin.faces', { lateral: t('Côtés'), all: t('Toutes les faces') }, geo, t('Faces de la peau'))), () => kind() !== 'cup'),
     ),
-    section('Matériau et procédé', true,
-      el('div', { class: 'field' }, el('div', { class: 'lab' }, el('label', { for: 'material' }, 'Matériau')), select('material', 'material', MATERIALS, onGeometry)),
-      el('div', { class: 'field' }, el('div', { class: 'lab' }, el('label', { for: 'process' }, 'Procédé de fabrication')), select('process', 'process', PROCESSES, onGeometry)),
-      el('div', { class: 'field' }, el('div', { class: 'lab' }, el('span', {}, 'Résolution du maillage')),
-        seg('res', 'resKey', { low: 'Aperçu', mid: 'Standard', high: 'Fine' }, onGeometry)),
+    section('grad', t('Gradients'), false,
+      field('gradient', t('Type de gradient'), select('gradient', 'gradient.kind', Object.fromEntries(Object.entries(GRADIENTS).map(([k, v]) => [k, t(v)])), geo)),
+      gradHint,
+      showIf(slider('grad-p1', t('Porosité finale'), 'gradient.p1', { min: 30, max: 95, step: 0.5, scale: 100, unit: '%', digits: 1 }, geo), () => state.gradient.kind !== 'none'),
+      showIf(slider('grad-c1', t('Cellule finale'), 'gradient.c1', { min: 0.4, max: 6, step: 0.05, unit: 'mm', digits: 2 }, geo), () => state.gradient.kind !== 'none'),
+      showIf(slider('grad-depth', t('Profondeur de transition'), 'gradient.depth', { min: 0.2, max: 15, step: 0.1, unit: 'mm', digits: 1 }, geo), () => state.gradient.kind === 'surface'),
     ),
-    section('Perfusion', true,
-      slider('inlet', 'Vitesse d\'entrée', 'flow.inlet', { min: 0.05, max: 2, step: 0.05, unit: 'mm/s', digits: 2 }, onFlow, onFlow),
+    section('mat', t('Matériau et fabrication'), true,
+      field('material', t('Matériau'), select('material', 'material', MATERIALS, geo)),
+      custom,
+      field('process', t('Procédé de fabrication'), select('process', 'process', PROCESSES, geo)),
+      field('res', t('Résolution du maillage'), seg('res', 'resKey', { low: t('Aperçu'), mid: t('Standard'), high: t('Fine') }, geo, t('Résolution'))),
+      slider('smooth', t('Lissage du maillage'), 'smooth', { min: 0, max: 10, step: 1, unit: t('passes'), digits: 0, tip: t('Lissage de Taubin, sans perte de volume') }, geo),
+    ),
+    section('flow', t('Perfusion'), true,
+      slider('inlet', t('Vitesse d\'entrée'), 'flow.inlet', { min: 0.05, max: 2, step: 0.05, unit: 'mm/s', digits: 2, tip: t('Vitesse de Darcy du milieu de culture') }, onFlow, onFlow),
       flowBtn, progress,
-      slider('pspeed', 'Accélération de l\'animation', 'flow.speed', { min: 0.5, max: 20, step: 0.5, unit: '×', digits: 1 }, onView, onView),
-      slider('pcount', 'Particules', 'flow.particles', { min: 500, max: 20000, step: 500, digits: 0 }, onFlow),
-      check('wss', 'Carte de cisaillement pariétal', 'flow.wss', onFlow),
+      button('btn-tensor', t('Perméabilité selon X, Y et Z'), 'tensor'),
+      slider('pspeed', t('Accélération de l\'animation'), 'flow.speed', { min: 0.5, max: 20, step: 0.5, unit: '×', digits: 1 }, onView, onView),
+      slider('pcount', t('Particules'), 'flow.particles', { min: 500, max: 20000, step: 500, digits: 0 }, onFlow),
+      check('wss', t('Carte de cisaillement pariétal'), 'flow.wss', onFlow),
       el('div', { class: 'row2' },
-        el('label', {}, 'Cible min (mPa)', numRaw('wss-lo', 'flow.wssLow')),
-        el('label', {}, 'Cible max (mPa)', numRaw('wss-hi', 'flow.wssHigh'))),
-      el('p', { class: 'hint' }, 'Fenêtre de cisaillement visée pour stimuler les ostéoblastes, modifiable selon ta référence.'),
+        num('wss-lo', t('Cible min (mPa)'), 'flow.wssLow', onFlow, { min: 0.001, max: 10000, step: 0.1 }),
+        num('wss-hi', t('Cible max (mPa)'), 'flow.wssHigh', onFlow, { min: 0.001, max: 10000, step: 0.1 })),
+      el('p', { class: 'hint' }, t('Fenêtre de cisaillement visée pour stimuler les ostéoblastes, modifiable selon ta référence.')),
     ),
-    section('Affichage', true,
-      slider('cut', 'Coupe', 'view.cut', { min: 0, max: 100, step: 1, unit: '%', digits: 0 }, onView, onView),
-      slider('opacity', 'Opacité du scaffold', 'view.opacity', { min: 10, max: 100, step: 1, unit: '%', digits: 0 }, onView, onView),
-      check('autorot', 'Rotation automatique', 'view.autoRotate', onView),
-      check('showp', 'Afficher les particules', 'view.particles', onView),
+    section('view', t('Affichage'), true,
+      seg('cut-axis', 'view.cutAxis', { x: t('Coupe X'), y: t('Coupe Y'), z: t('Coupe Z') }, onView, t('Axe de coupe')),
+      slider('cut', t('Position de coupe'), 'view.cut', { min: 0, max: 100, step: 1, unit: '%', digits: 0 }, onView, onView),
+      slider('opacity', t('Opacité du scaffold'), 'view.opacity', { min: 10, max: 100, step: 1, unit: '%', digits: 0 }, onView, onView),
+      check('autorot', t('Rotation automatique'), 'view.autoRotate', onView),
+      check('showp', t('Afficher les particules'), 'view.particles', onView),
     ),
   );
-
-  function numRaw(id, path) {
-    const input = el('input', { type: 'number', id, min: 0.001, max: 10000, step: 0.1 });
-    input.addEventListener('change', () => { const v = Math.max(0.001, Number(input.value) || 0.1); set(state, path, v); onFlow(); });
-    refreshers.push(() => { input.value = get(state, path); });
-    return input;
-  }
 
   refresh();
   return { refresh, flowBtn };

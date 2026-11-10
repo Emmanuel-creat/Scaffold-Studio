@@ -1,6 +1,6 @@
 // Mesures morphologiques et mecaniques d'un scaffold.
 import { meshVolumeArea } from './mesher.js';
-import { specimenBox } from './tpms.js';
+import { specimenVolume as shapeVolume, makeFieldFn } from './tpms.js';
 
 export const MATERIALS = {
   ti64: { label: 'Ti-6Al-4V (titane, fusion laser)', E: 110, sy: 880, rho: 4.43 },
@@ -9,7 +9,19 @@ export const MATERIALS = {
   pcl: { label: 'PCL (polycaprolactone)', E: 0.4, sy: 16, rho: 1.145 },
   pla: { label: 'PLA', E: 3.5, sy: 60, rho: 1.24 },
   ha: { label: 'Hydroxyapatite dense', E: 100, sy: 400, rho: 3.16 },
+  cocr: { label: 'Cobalt-chrome (CoCrMo)', E: 210, sy: 800, rho: 8.3 },
+  mg: { label: 'Magnésium WE43 (résorbable)', E: 44, sy: 170, rho: 1.84 },
+  zn: { label: 'Zinc pur (résorbable)', E: 108, sy: 30, rho: 7.14 },
+  tcp: { label: 'β-TCP dense (résorbable)', E: 60, sy: 150, rho: 3.07 },
+  custom: { label: 'Matériau personnalisé', E: 10, sy: 100, rho: 2, custom: true },
 };
+
+// Materiau effectif : les valeurs saisies remplacent celles du materiau personnalise.
+export function materialOf(params) {
+  const m = MATERIALS[params.material] || MATERIALS.ti64;
+  if (m.custom && params.customMaterial) return { ...m, ...params.customMaterial };
+  return m;
+}
 
 export const PROCESSES = {
   sla: { label: 'Stéréolithographie (résine)', minFeature: 0.15 },
@@ -128,8 +140,7 @@ export function computeMetrics(params, field, mesh) {
   const N = nx * ny * nz;
   let nIn = 0, nVoid = 0;
   for (let p = 0; p < N; p++) if (inside[p]) { nIn++; if (data[p] >= 0) nVoid++; }
-  const [X, Y, Z] = specimenBox(params.shape);
-  const specimenVolume = params.shape.kind === 'cylinder' ? Math.PI * (X / 2) ** 2 * Z : X * Y * Z;
+  const specimenVolume = shapeVolume(params.shape);
   const { volume, area } = meshVolumeArea(mesh.positions, mesh.indices);
   const porosity = 1 - volume / specimenVolume;
 
@@ -146,10 +157,9 @@ export function computeMetrics(params, field, mesh) {
   const pore = stats(ridgeDiameters(dtVoid, voidIn, field, hx));
   const strut = stats(ridgeDiameters(dtSolid, solidIn, field, hx));
 
-  const mat = MATERIALS[params.material];
+  const mat = materialOf(params);
   const rel = Math.max(0, 1 - porosity);
-  const n = params.mode === 'sheet' ? 1.5 : 2;
-  const C1 = params.mode === 'sheet' ? 0.6 : 1;
+  const { C: C1, n } = gaCoeffs(params);
   const E = C1 * mat.E * Math.pow(rel, n); // GPa
   const sy = 0.3 * mat.sy * Math.pow(rel, 1.5); // MPa
   const mass = volume * mat.rho / 1000; // g (mm3 * g/cm3 / 1000)
@@ -171,4 +181,57 @@ export function computeMetrics(params, field, mesh) {
     minFeature: proc.minFeature,
     triangles: mesh.indices.length / 3,
   };
+}
+
+// Epaisseur de strut moyenne (mm) d'un reseau infini, estimee sur un bloc de 2 x 2 x 2 cellules.
+export function unitStrut(params, porosity, n = 32) {
+  const p = { ...params, porosity, gradient: { kind: 'none' }, rotation: null, skin: null };
+  const fn = makeFieldFn(p);
+  const N = 2 * n, h = params.cell / n;
+  const solid = new Uint8Array(N * N * N), voidm = new Uint8Array(N * N * N);
+  let q = 0;
+  for (let k = 0; k < N; k++) for (let j = 0; j < N; j++) for (let i = 0; i < N; i++, q++) {
+    const s = fn.tpms((i + 0.5) * h, (j + 0.5) * h, (k + 0.5) * h) < 0;
+    solid[q] = s ? 1 : 0; voidm[q] = s ? 0 : 1;
+  }
+  const dt = edt3d(voidm, N, N, N);
+  const out = [];
+  const sy = N, sz = N * N;
+  for (let k = n / 2; k < N - n / 2; k++) for (let j = n / 2; j < N - n / 2; j++) for (let i = n / 2; i < N - n / 2; i++) {
+    const pp = i + j * sy + k * sz;
+    if (!solid[pp] || dt[pp] < 2) continue;
+    const v = dt[pp];
+    let isMax = true;
+    for (let dk = -1; dk <= 1 && isMax; dk++) for (let dj = -1; dj <= 1 && isMax; dj++) for (let di = -1; di <= 1; di++)
+      if (dt[pp + di + dj * sy + dk * sz] > v) { isMax = false; break; }
+    if (isMax) out.push(2 * Math.sqrt(v) * h);
+  }
+  return out.length ? out.reduce((a, b) => a + b, 0) / out.length : 0;
+}
+
+// Porosite qui donne l'epaisseur de strut visee (recherche par dichotomie).
+export function porosityForStrut(params, target) {
+  let lo = 0.3, hi = 0.95;
+  for (let it = 0; it < 14; it++) {
+    const mid = (lo + hi) / 2;
+    if (unitStrut(params, mid) > target) lo = mid; else hi = mid;
+  }
+  return (lo + hi) / 2;
+}
+
+// Coefficients de Gibson-Ashby (E*/Es = C rho*^n). Valeurs generiques, remplacees
+// par un ajustement sur les elements finis quand il a ete calcule pour cette surface.
+export const GA_FIT = {};
+export function gaCoeffs(params) {
+  const fit = GA_FIT[`${params.type}|${params.mode}`];
+  if (fit) return fit;
+  return params.mode === 'sheet' ? { C: 0.6, n: 1.5 } : { C: 1, n: 2 };
+}
+
+// Porosite qui donne la rigidite visee (GPa) selon Gibson-Ashby.
+export function porosityForE(params, E) {
+  const mat = materialOf(params);
+  const { C, n } = gaCoeffs(params);
+  const rel = Math.pow(E / (C * mat.E), 1 / n);
+  return Math.min(0.95, Math.max(0.2, 1 - rel));
 }

@@ -20,23 +20,38 @@
     <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 5l12 7-12 7z" fill="currentColor"/></symbol>
     <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1.5" fill="currentColor"/></symbol>
     <symbol id="i-eye" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.7"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></g></symbol>
+    <symbol id="i-undo" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></g></symbol>
+    <symbol id="i-redo" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14l5-5-5-5"/><path d="M20 9H10a6 6 0 0 0 0 12h3"/></g></symbol>
+    <symbol id="i-save" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M5 4h11l3 3v13H5z"/><path d="M8 4v5h7V4M8 20v-6h8v6"/></g></symbol>
+    <symbol id="i-open" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M3 6h6l2 2h10v11H3z"/></g></symbol>
+    <symbol id="i-link" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></g></symbol>
     <symbol id="i-help" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.3-1 .8-1 1.5v.5"/><circle cx="12" cy="17" r=".6" fill="currentColor"/></g></symbol>
   </defs>
 </svg>
 
 <header class="topbar">
-  <div class="brand"><svg class="logo"><use href="#i-logo"/></svg><span>Scaffold Studio</span><em id="version">v1.0</em></div>
+  <div class="brand"><svg class="logo"><use href="#i-logo"/></svg><span>Scaffold Studio</span><em id="version">v1.1</em></div>
   <div class="presets">
-    <label for="preset">Modèle</label>
+    <label for="preset" data-i18n>Modèle</label>
     <select id="preset"></select>
   </div>
   <nav class="actions">
+    <div class="group">
+      <button id="btn-undo" data-i18n-title="Annuler (Ctrl+Z)" title="Annuler (Ctrl+Z)" aria-label="Annuler"><svg><use href="#i-undo"/></svg></button>
+      <button id="btn-redo" data-i18n-title="Rétablir (Ctrl+Y)" title="Rétablir (Ctrl+Y)" aria-label="Rétablir"><svg><use href="#i-redo"/></svg></button>
+    </div>
+    <div class="group">
+      <button id="btn-open" data-i18n-title="Ouvrir un projet" title="Ouvrir un projet" aria-label="Ouvrir"><svg><use href="#i-open"/></svg></button>
+      <button id="btn-save" data-i18n-title="Enregistrer le projet (Ctrl+S)" title="Enregistrer le projet (Ctrl+S)" aria-label="Enregistrer"><svg><use href="#i-save"/></svg></button>
+      <button id="btn-link" data-i18n-title="Copier un lien vers ce projet" title="Copier un lien vers ce projet" aria-label="Lien"><svg><use href="#i-link"/></svg></button>
+    </div>
     <button id="btn-stl" title="Exporter le maillage pour l'impression 3D"><svg><use href="#i-stl"/></svg><span>STL</span></button>
-    <button id="btn-report" title="Exporter les mesures (CSV)"><svg><use href="#i-report"/></svg><span>Rapport</span></button>
-    <button id="btn-photo" title="Capture d'image (P)"><svg><use href="#i-photo"/></svg><span>Image</span></button>
-    <button id="btn-rec" title="Enregistrer une vidéo (R)"><svg><use href="#i-rec"/></svg><span>Vidéo</span></button>
-    <button id="btn-fly" class="primary" title="Voler à travers les pores (F)"><svg><use href="#i-fly"/></svg><span>Mode vol</span></button>
-    <button id="btn-help" title="Aide et raccourcis"><svg><use href="#i-help"/></svg></button>
+    <button id="btn-report" title="Exporter les mesures (CSV)"><svg><use href="#i-report"/></svg><span data-i18n>Rapport</span></button>
+    <button id="btn-photo" title="Capture d'image (P)"><svg><use href="#i-photo"/></svg><span data-i18n>Image</span></button>
+    <button id="btn-rec" title="Enregistrer une vidéo (R)"><svg><use href="#i-rec"/></svg><span data-i18n>Vidéo</span></button>
+    <button id="btn-fly" class="primary" title="Voler à travers les pores (F)"><svg><use href="#i-fly"/></svg><span data-i18n>Mode vol</span></button>
+    <button id="btn-lang" class="lang" title="Langue / Language" aria-label="Langue">EN</button>
+    <button id="btn-help" data-i18n-title="Aide et raccourcis" title="Aide et raccourcis"><svg><use href="#i-help"/></svg></button>
   </nav>
 </header>
 
@@ -65,6 +80,8 @@
     <li><kbd>P</kbd> capture d'image</li>
     <li><kbd>Espace</kbd> lancer ou arrêter la perfusion</li>
     <li><kbd>Échap</kbd> quitter le mode vol</li>
+    <li><kbd>Ctrl</kbd><kbd>Z</kbd> annuler, <kbd>Ctrl</kbd><kbd>Y</kbd> rétablir</li>
+    <li><kbd>Ctrl</kbd><kbd>S</kbd> enregistrer le projet</li>
   </ul>
   <h3>Méthodes</h3>
   <p>Géométrie : surfaces minimales triplement périodiques, seuil calculé pour atteindre la porosité visée, maillage par surface nets. Mesures : diamètre de pore et épaisseur de strut par sphère inscrite (transformée de distance exacte). Rigidité : loi de Gibson-Ashby. Perfusion : méthode de Boltzmann sur réseau D3Q19, perméabilité par la loi de Darcy, cisaillement pariétal estimé par le gradient de vitesse près de la paroi.</p>

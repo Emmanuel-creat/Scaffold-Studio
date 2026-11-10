@@ -23,15 +23,18 @@ Ces compromis se calculent d'habitude dans plusieurs logiciels lourds (CAO, mail
 
 | Domaine | Ce que fait l'application |
 | --- | --- |
-| Géométrie | 5 surfaces TPMS, mode réseau (struts) ou feuillet (paroi), taille de cellule de 0,6 à 5 mm, porosité visée de 30 à 92 %, éprouvette en pavé ou en cylindre |
-| Gradients | Porosité constante, gradient axial (base vers sommet) ou radial (coeur spongieux vers périphérie corticale) |
-| Morphologie | Porosité mesurée sur le maillage, diamètre de pore et épaisseur de strut par sphère inscrite, surface spécifique, interconnectivité des pores |
-| Mécanique | Module de Young et limite d'élasticité estimés (Gibson-Ashby) pour 6 matériaux, comparés aux plages de l'os spongieux et cortical, masse de la pièce |
-| Fabrication | Vérification de l'épaisseur minimale selon le procédé (stéréolithographie, fusion laser sur lit de poudre, dépôt de fil) |
-| Perfusion | Écoulement de Stokes par méthode de Boltzmann sur réseau (D3Q19), perméabilité de Darcy, particules traçantes animées |
-| Cisaillement | Carte de cisaillement pariétal sur toute la surface et part de la surface dans la fenêtre cible |
-| Visualisation | Vue en coupe, transparence, rotation, mode vol à travers les pores en suivant une ligne de courant |
-| Exports | Maillage STL (millimètres) prêt pour l'impression 3D, rapport CSV des mesures, capture PNG, enregistrement vidéo WebM |
+| Géométrie | 9 surfaces TPMS (gyroïde, diamant, Schwarz P, I-WP, Neovius, Fischer-Koch S, F-RD, Split P, lidinoïde), mode réseau ou feuillet, anisotropie et rotation de la cellule, ajustement aux cellules entières |
+| Forme de la pièce | Pavé, cylindre, cage intersomatique à angles arrondis, cupule acétabulaire, trou central de greffe, peau pleine, import d'une forme STL quelconque (défaut osseux segmenté, implant) |
+| Gradients | Axial, radial, sphérique ou depuis la surface (coque dense et coeur poreux), sur la porosité et la taille de cellule |
+| Design inverse | Porosité calculée pour obtenir une épaisseur de strut visée ou une rigidité visée |
+| Morphologie | Porosité mesurée, diamètre de pore et épaisseur de strut par sphère inscrite, surface spécifique, interconnectivité |
+| Mécanique | Module de Young et limite d'élasticité estimés (Gibson-Ashby) pour 10 matériaux et un matériau personnalisé, comparés aux plages de l'os, masse |
+| Fabrication | Vérification de l'épaisseur minimale selon le procédé, lissage de Taubin sans perte de volume |
+| Perfusion | Boltzmann sur réseau D3Q19 à collision TRT, perméabilité de Darcy, tenseur de perméabilité selon X, Y et Z, perte de charge, particules traçantes |
+| Cisaillement | Carte de cisaillement pariétal et part de la surface dans la fenêtre cible |
+| Visualisation | Coupe selon X, Y ou Z, transparence, rotation, mode vol à travers les pores |
+| Projet | Annuler et rétablir, enregistrement et ouverture d'un projet, lien partageable, aperçu rapide puis résolution finale, interface en français ou en anglais |
+| Exports | STL (millimètres), rapport CSV, capture PNG, vidéo MP4 quand le navigateur le permet, sinon WebM |
 
 ![Carte de cisaillement en coupe](docs/captures/02-cisaillement-coupe.png)
 
@@ -42,9 +45,14 @@ Ces compromis se calculent d'habitude dans plusieurs logiciels lourds (CAO, mail
 ## Modèles fournis
 
 - Gyroïde titane (cube 8 mm)
-- Cage rachidienne titane avec gradient radial
+- Cage lombaire titane avec fenêtre de greffe
+- Cage cylindrique titane, gradient radial
+- Cupule acétabulaire poreuse
+- Défaut segmentaire de fémur de rat (Ø 4 × 5 mm)
+- Défaut de calvaria de rat (Ø 8 × 1,5 mm) en β-TCP
 - Substitut osseux résorbable en PCL
-- Os trabéculaire bio-inspiré en hydroxyapatite avec gradient axial
+- Os trabéculaire bio-inspiré avec gradient axial et cellule étirée
+- Coque corticale et coeur spongieux en magnésium WE43
 - Bouchon en tantale Schwarz P
 - Implant PEEK Neovius
 
@@ -80,6 +88,8 @@ npm run build     # version de production dans dist/
 | P | Capture d'image |
 | Espace | Lancer ou arrêter la perfusion |
 | Échap | Quitter le mode vol |
+| Ctrl+Z, Ctrl+Y | Annuler, rétablir |
+| Ctrl+S | Enregistrer le projet |
 
 ## Tourner une vidéo
 
@@ -87,7 +97,7 @@ npm run build     # version de production dans dist/
 2. Régler l'opacité vers 20 % pour voir les particules, ou activer la carte de cisaillement.
 3. Appuyer sur H pour masquer l'interface, puis R pour enregistrer.
 4. Appuyer sur F pour le vol à travers les pores (environ 26 secondes de traversée).
-5. R pour arrêter : la vidéo est téléchargée en WebM.
+5. R pour arrêter : la vidéo est téléchargée en MP4 si le navigateur sait l'encoder, sinon en WebM.
 
 ## Méthodes et validation
 
@@ -96,13 +106,17 @@ Les méthodes sont détaillées dans le [cahier des charges](docs/CAHIER_DES_CHA
 - **Géométrie :** le seuil de chaque surface est calculé par quantile sur une cellule unité pour atteindre exactement la porosité visée, puis l'isosurface est maillée par surface nets (maillage fermé et orienté).
 - **Morphologie :** transformée de distance euclidienne exacte (Felzenszwalb et Huttenlocher), diamètres pris aux maxima locaux.
 - **Mécanique :** loi de Gibson-Ashby, E = C · Es · ρ*ⁿ avec n = 2 en réseau et 1,5 en feuillet.
-- **Perfusion :** Boltzmann sur réseau D3Q19, collision BGK, rebond à mi-chemin sur les parois, force volumique équivalente à un gradient de pression, perméabilité par la loi de Darcy. Sans gradient, le calcul porte sur une cellule périodique, ce qui donne la perméabilité du réseau infini.
+- **Perfusion :** Boltzmann sur réseau D3Q19, collision à deux temps de relaxation (TRT, paramètre magique 3/16) qui rend la perméabilité indépendante de la viscosité numérique, rebond à mi-chemin sur les parois, force volumique équivalente à un gradient de pression, perméabilité par la loi de Darcy. Sans gradient, le calcul porte sur une cellule périodique, ce qui donne la perméabilité du réseau infini.
 
 Tests automatiques :
 
 | Test | Résultat |
 | --- | --- |
-| Écoulement de Poiseuille entre deux plaques | écart de 0,3 % avec la solution analytique |
+| Écoulement de Poiseuille entre deux plaques | écart inférieur à 1 % avec la solution analytique, indépendant de la viscosité |
+| Réseau cubique de sphères (Sangani et Acrivos) | écart de 0,4 % sur la perméabilité |
+| 9 surfaces TPMS | porosité visée atteinte, anisotropie, rotation, formes et peau vérifiées |
+| Import STL | volume d'un cube voxelisé à 8 % près |
+| Projet | lien partageable aller-retour, annuler et rétablir |
 | Volume du maillage par rapport à la porosité visée | écart inférieur à 3 points sur les 10 combinaisons surface et mode |
 | Transformée de distance | distances exactes sur un cas de référence |
 | Interconnectivité d'un gyroïde | 100 % |
@@ -122,6 +136,9 @@ src/
   flow.js          particules, cisaillement, trajectoire de vol
   main.js          scène 3D, exports, raccourcis
   ui.js, panel.js  panneaux de paramètres et de mesures
+  stl.js           import STL et distance signée
+  project.js       projet, lien partageable, historique
+  i18n.js          traduction français et anglais
 tests/             tests unitaires (Vitest)
 ```
 

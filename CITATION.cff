@@ -1,0 +1,19 @@
+cff-version: 1.2.0
+message: "Pour citer ce logiciel, merci d'utiliser les informations ci-dessous."
+title: "Scaffold Studio"
+abstract: "Conception, mesure et perfusion simulée de scaffolds poreux TPMS pour l'ingénierie tissulaire osseuse."
+type: software
+authors:
+  - family-names: "Bailly"
+    given-names: "Emmanuel"
+repository-code: "https://github.com/Emmanuel-creat/Scaffold-Studio"
+url: "https://emmanuel-creat.github.io/Scaffold-Studio/"
+license: MIT
+version: 1.1.0
+date-released: "2026-11-10"
+keywords:
+  - tissue engineering
+  - bone scaffold
+  - TPMS
+  - lattice Boltzmann
+  - permeability
