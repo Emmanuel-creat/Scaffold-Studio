@@ -1,6 +1,7 @@
 // Construction du panneau de parametres a partir d'une description declarative.
 import { SURFACES, MODES, SHAPES, GRADIENTS } from './tpms.js';
 import { MATERIALS, PROCESSES } from './metrics.js';
+import { FLUIDS } from './bio.js';
 import { t } from './i18n.js';
 
 const get = (o, path) => path.split('.').reduce((a, k) => (a == null ? a : a[k]), o);
@@ -18,7 +19,7 @@ export function el(tag, attrs = {}, ...kids) {
 }
 
 export function buildControls(root, state, cb) {
-  const { onGeometry, onFlow, onView, onRunFlow, onAction, beforeChange } = cb;
+  const { onGeometry, onFlow, onView, onRunFlow, onAction, beforeChange, onSolver, onBio } = cb;
   const refreshers = [];
   const refresh = () => refreshers.forEach((f) => f());
   // Chaque commande enregistre l'etat dans l'historique avant de le modifier.
@@ -175,10 +176,27 @@ export function buildControls(root, state, cb) {
         num('wss-lo', t('Cible min (mPa)'), 'flow.wssLow', onFlow, { min: 0.001, max: 10000, step: 0.1 }),
         num('wss-hi', t('Cible max (mPa)'), 'flow.wssHigh', onFlow, { min: 0.001, max: 10000, step: 0.1 })),
       el('p', { class: 'hint' }, t('Fenêtre de cisaillement visée pour stimuler les ostéoblastes, modifiable selon ta référence.')),
+      el('details', { class: 'sub' }, el('summary', {}, t('Solveur et fluide')),
+        field('fluid', t('Fluide'), select('fluid', 'flow.fluid', FLUIDS, onFlow)),
+        field('bc', t('Condition motrice'), select('bc', 'flow.bc', { force: t('Force volumique (cellule périodique)'), pressure: t('Pression imposée (éprouvette entière)') }, onSolver)),
+        check('gpu', t('Calcul sur carte graphique (WebGPU)'), 'flow.gpu', onSolver)),
+    ),
+    section('bio', t('Biologie'), false,
+      el('p', { class: 'hint' }, t('Oxygène, ensemencement et croissance du tissu, calculés sur l\'écoulement établi.')),
+      slider('bio-vmax', t('Consommation d\'O₂ par cellule'), 'bio.vmax', { min: 0.2, max: 10, step: 0.1, unit: '×10⁻¹⁷ mol/s', digits: 1, tip: t('Vitesse maximale de Michaelis-Menten, environ 2 pour des ostéoblastes') }, onBio),
+      slider('bio-density', t('Densité cellulaire sur les parois'), 'bio.density', { min: 100, max: 5000, step: 50, unit: t('cellules/mm²'), digits: 0 }, onBio),
+      button('btn-oxygen', t('Calculer l\'oxygène'), 'oxygen'),
+      slider('bio-cells', t('Cellules injectées'), 'bio.cells', { min: 200, max: 8000, step: 100, digits: 0 }, onBio),
+      slider('bio-attach', t('Probabilité d\'adhésion au contact'), 'bio.attach', { min: 5, max: 100, step: 1, scale: 100, unit: '%', digits: 0 }, onBio),
+      el('div', { class: 'row2' }, button('btn-seed', t('Ensemencer'), 'seed', 'btn'), button('btn-replay', t('Rejouer'), 'replaySeed', 'btn')),
+      slider('bio-lambda', t('Vitesse de dépôt du tissu'), 'bio.lambda', { min: 0.5, max: 10, step: 0.1, unit: '×10⁻³ mm²/j', digits: 1, tip: t('Coefficient de croissance pilotée par la courbure (Rumpler 2008, Bidan 2012)') }, onBio),
+      button('btn-tissue', t('Simuler la croissance du tissu'), 'tissue'),
+      check('show-tissue', t('Afficher le tissu formé'), 'bio.showTissue', onBio),
+      field('bio-day', t('Jour de culture'), seg('bio-day', 'bio.day', { 7: 'J7', 14: 'J14', 28: 'J28', 42: 'J42', 56: 'J56' }, onBio, t('Jour de culture'))),
     ),
     section('view', t('Affichage'), true,
       field('surface-map', t('Carte sur la surface'), select('surface-map', 'view.map', {
-        none: t('Matériau'), thickness: t('Épaisseur locale'), pore: t('Taille de pore locale'), curvature: t('Courbure moyenne'), overhang: t('Surplombs à l\'impression'),
+        none: t('Matériau'), thickness: t('Épaisseur locale'), pore: t('Taille de pore locale'), curvature: t('Courbure moyenne'), overhang: t('Surplombs à l\'impression'), oxygen: t('Oxygène dissous'),
       }, onView)),
       seg('cut-axis', 'view.cutAxis', { x: t('Coupe X'), y: t('Coupe Y'), z: t('Coupe Z') }, onView, t('Axe de coupe')),
       slider('cut', t('Position de coupe'), 'view.cut', { min: 0, max: 100, step: 1, unit: '%', digits: 0 }, onView, onView),

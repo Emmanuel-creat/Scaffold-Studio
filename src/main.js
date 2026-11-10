@@ -139,6 +139,7 @@ function geoParams(res = RES[state.resKey]) {
 }
 function requestGeometry() {
   stopFlow(true);
+  clearBio(true);
   app.tensor = null;
   if (geoBusy) newGeoWorker();
   geoBusy = true;
@@ -232,6 +233,7 @@ function stopFlow(clear) {
   if (app.flowStatus.state === 'running') app.flowStatus.state = clear ? 'idle' : 'stopped';
   if (clear) {
     app.flow = null; app.wss = null; app.flowStatus = { state: 'idle' };
+    clearBio(false);
     if (app.particles) { root.remove(app.particles.object); app.particles.dispose(); app.particles = null; }
     if (app.fly) exitFly();
     if (app.colorMode === 'wss') refreshColors();
@@ -252,17 +254,166 @@ flowWorker.onmessage = (e) => {
     app.flowStatus.state = d.converged ? 'converged' : d.stopped ? 'stopped' : 'max';
     ctl.flowBtn.innerHTML = `<svg><use href="#i-play"/></svg> ${t('Relancer la perfusion')}`;
     updatePanel();
+    if (pendingBio && app.flow) { const c = pendingBio; pendingBio = null; runBio(c); }
     return;
   }
   app.flow = new FlowField(d.field, state);
   app.flowStatus.steps = d.steps;
   app.flowStatus.permeability = d.permeability;
+  app.flowStatus.engine = d.engine;
   ensureParticles();
   app.particles.setField(app.flow);
   if (state.flow.wss) computeWss();
   updatePanel();
   if (pendingFly && d.steps >= 300) { pendingFly = false; enterFly(); }
 };
+
+
+// ---------- Biologie (worker) : oxygene, ensemencement, croissance tissulaire ----------
+let bioWorker = null, bioId = 0, pendingBio = null;
+app.bio = { oxygen: null, seed: null, tissue: null, running: null };
+const tissueMat = new THREE.MeshStandardMaterial({ color: 0xd7838a, roughness: 0.55, transparent: true, opacity: 0.6, depthWrite: false, clippingPlanes: [clip], side: THREE.DoubleSide });
+function flowPayload() {
+  const f = app.flow;
+  return { nx: f.nx, ny: f.ny, nz: f.nz, size: f.size, period: f.period, solid: f.solid, ux: f.ux, uy: f.uy, uz: f.uz, scale: f.scale };
+}
+function clearBio(all) {
+  app.bio.oxygen = null; app.bio.seed = null; app.oxyMap = null; pendingBio = null;
+  if (app.seedPoints) { root.remove(app.seedPoints); app.seedPoints.geometry.dispose(); app.seedPoints = null; }
+  if (all) {
+    app.bio.tissue = null;
+    if (app.tissueMesh) { root.remove(app.tissueMesh); app.tissueMesh.geometry.dispose(); app.tissueMesh = null; }
+  }
+  if (app.bio.running && (all || app.bio.running !== 'tissue')) { app.bio.running = null; newBioWorker(); busy(false); }
+  if (state.view.map === 'oxygen' && app.mesh) refreshColors();
+}
+function runBio(cmd) {
+  if (!app.mesh || geoBusy) { status(t('Attends la fin du calcul de géométrie')); return; }
+  if (cmd !== 'tissue' && (!app.flow || app.flowStatus.state === 'running')) {
+    pendingBio = cmd;
+    if (app.flowStatus.state !== 'running') startFlow();
+    status(t('Perfusion en cours, le calcul démarre dès que l\'écoulement est établi'));
+    return;
+  }
+  const msg = { id: ++bioId, cmd, params: geoParams() };
+  if (cmd !== 'tissue') msg.flow = flowPayload();
+  if (cmd === 'oxygen') msg.positions = app.mesh.geometry.attributes.position.array.slice();
+  app.bio.running = cmd;
+  busy(true, t({ oxygen: 'Oxygène en perfusion', seed: 'Ensemencement des cellules', tissue: 'Croissance du tissu' }[cmd]));
+  bioWorker.postMessage(msg);
+  updatePanel();
+}
+function onBioMessage(e) {
+  const d = e.data;
+  if (d.id !== bioId) return;
+  if (d.stage) { busy(true, t(d.stage)); return; }
+  app.bio.running = null;
+  busy(false);
+  if (!d.ok) { status(`${t('Erreur')} : ${d.error}`); updatePanel(); return; }
+  if (d.cmd === 'oxygen') {
+    app.bio.oxygen = d;
+    app.oxyMap = d.map;
+    // Echelle de couleur resserree sur les valeurs presentes, arrondie a 5 uM.
+    let lo = Infinity, hi = -Infinity;
+    for (const v of d.map) if (Number.isFinite(v)) { lo = Math.min(lo, v); hi = Math.max(hi, v); }
+    app.oxyRange = [Math.floor(lo * 200) / 200, Math.max(Math.ceil(hi * 200) / 200, Math.floor(lo * 200) / 200 + 0.005)];
+    if (state.view.map !== 'oxygen') { state.view.map = 'oxygen'; ctl.refresh(); }
+    refreshColors();
+    status(t('Oxygène calculé'));
+  } else if (d.cmd === 'seed') {
+    app.bio.seed = d;
+    showSeeding(d);
+    status(`${t('Efficacité d\'ensemencement')} ${(d.efficiency * 100).toFixed(0)} %`);
+  } else if (d.cmd === 'tissue') {
+    app.bio.tissue = d;
+    if (!d.meshes.some((m) => m.day === Number(state.bio.day))) state.bio.day = d.meshes[d.meshes.length - 1].day;
+    state.bio.showTissue = true;
+    ctl.refresh();
+    showTissue();
+    status(t('Croissance tissulaire simulée'));
+  }
+  updatePanel();
+}
+function newBioWorker() {
+  if (bioWorker) bioWorker.terminate();
+  bioWorker = new Worker(new URL('./bio.worker.js', import.meta.url), { type: 'module' });
+  bioWorker.onmessage = onBioMessage;
+}
+newBioWorker();
+
+// Tissu forme au jour choisi.
+function showTissue() {
+  if (app.tissueMesh) { root.remove(app.tissueMesh); app.tissueMesh.geometry.dispose(); app.tissueMesh = null; }
+  const tis = app.bio.tissue;
+  if (!tis || !state.bio.showTissue) return;
+  const m = tis.meshes.find((x) => x.day === Number(state.bio.day)) || tis.meshes[tis.meshes.length - 1];
+  if (!m.indices.length) return;
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(m.positions, 3));
+  g.setAttribute('normal', new THREE.BufferAttribute(m.normals, 3));
+  g.setIndex(new THREE.BufferAttribute(m.indices, 1));
+  g.computeBoundingSphere();
+  app.tissueMesh = new THREE.Mesh(g, tissueMat);
+  root.add(app.tissueMesh);
+}
+
+let dotTex = null;
+function dotTexture() {
+  if (dotTex) return dotTex;
+  const c = document.createElement('canvas'); c.width = c.height = 64;
+  const g = c.getContext('2d');
+  const grd = g.createRadialGradient(32, 32, 0, 32, 32, 31);
+  grd.addColorStop(0, '#ffffff'); grd.addColorStop(0.55, '#e8e8e8'); grd.addColorStop(0.8, 'rgba(255,255,255,0.6)'); grd.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = grd; g.beginPath(); g.arc(32, 32, 31, 0, Math.PI * 2); g.fill();
+  dotTex = new THREE.CanvasTexture(c); dotTex.colorSpace = THREE.SRGBColorSpace;
+  return dotTex;
+}
+// Cellules ensemencees : trajectoires rejouees, puis cellules adherentes en couleur.
+function showSeeding(d) {
+  if (app.seedPoints) { root.remove(app.seedPoints); app.seedPoints.geometry.dispose(); }
+  const { cells, frames, track, status: st } = d;
+  const stop = new Uint16Array(cells);
+  const last = (frames - 1) * cells * 3;
+  for (let c = 0; c < cells; c++) {
+    let f = frames - 1;
+    while (f > 0) {
+      const a = (f - 1) * cells * 3 + c * 3;
+      if (track[a] !== track[last + c * 3] || track[a + 1] !== track[last + c * 3 + 1] || track[a + 2] !== track[last + c * 3 + 2]) break;
+      f--;
+    }
+    stop[c] = f;
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(cells * 3), 3).setUsage(THREE.DynamicDrawUsage));
+  g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(cells * 3), 3).setUsage(THREE.DynamicDrawUsage));
+  // Cellules vues par transparence a travers le scaffold, pour suivre leur trajet dans les pores.
+  const mat = new THREE.PointsMaterial({ size: Math.max(...specimenBox(state.shape)) * 0.045, vertexColors: true, sizeAttenuation: true, clippingPlanes: [clip], depthTest: false, transparent: true, opacity: 0.9 });
+  mat.map = dotTexture(); mat.alphaTest = 0.2;
+  app.seedPoints = new THREE.Points(g, mat);
+  app.seedPoints.frustumCulled = false;
+  app.seedPoints.renderOrder = 10;
+  app.seedAnim = { t0: performance.now(), dur: 9000, stop, status: st, frames, cells, track };
+  root.add(app.seedPoints);
+}
+function updateSeeding() {
+  const a = app.seedAnim;
+  if (!a || !app.seedPoints) return;
+  const s = Math.min(1, (performance.now() - a.t0) / a.dur) * (a.frames - 1);
+  const f0 = Math.floor(s), f1 = Math.min(a.frames - 1, f0 + 1), w = s - f0;
+  const pos = app.seedPoints.geometry.attributes.position.array, col = app.seedPoints.geometry.attributes.color.array;
+  const T = a.track, n3 = a.cells * 3;
+  for (let c = 0; c < a.cells; c++) {
+    const b = c * 3, st = a.status[c];
+    const done = f0 >= a.stop[c];
+    if (done && (st === 2 || st === 3)) { pos[b] = pos[b + 1] = pos[b + 2] = NaN; continue; }
+    for (let k = 0; k < 3; k++) pos[b + k] = T[f0 * n3 + b + k] * (1 - w) + T[f1 * n3 + b + k] * w;
+    const rgb = done && st === 1 ? [0.3, 0.92, 0.52] : [1.0, 0.68, 0.22];
+    col[b] = rgb[0]; col[b + 1] = rgb[1]; col[b + 2] = rgb[2];
+  }
+  app.seedPoints.geometry.attributes.position.needsUpdate = true;
+  app.seedPoints.geometry.attributes.color.needsUpdate = true;
+  if (s >= a.frames - 1) app.seedAnim = null;
+}
 
 function ensureParticles() {
   if (app.particles && app.particles.count === state.flow.particles) return;
@@ -294,6 +445,7 @@ const MAP_INFO = {
   pore: { label: 'Taille de pore locale (µm)', max: () => app.metrics.pore.p95 * 1.25 },
   curvature: { label: 'Courbure moyenne (mm⁻¹)', max: () => (app.analysis ? app.analysis.curvatureScale : 1) },
   overhang: { label: 'Surplombs', max: () => 1 },
+  oxygen: { label: 'Oxygène dissous (µM)', min: () => app.oxyRange[0], max: () => app.oxyRange[1] },
 };
 function refreshColors() {
   if (!app.mesh) return;
@@ -302,18 +454,20 @@ function refreshColors() {
   let mode = 'none';
   if (app.fem && app.fem.showVm && app.fem.result && app.fem.key === femKey()) mode = 'vm';
   else if (state.flow.wss && app.wss) mode = 'wss';
+  else if (state.view.map === 'oxygen') { if (app.oxyMap) mode = 'oxygen'; }
   else if (state.view.map && state.view.map !== 'none' && app.maps) mode = state.view.map;
   app.colorMode = mode;
   if (mode === 'vm') colorVm();
   else if (mode === 'wss') col.set(app.wss.colors);
   else if (mode !== 'none') {
-    const vals = app.maps[mode];
-    const max = MAP_INFO[mode].max();
+    const vals = mode === 'oxygen' ? app.oxyMap : app.maps[mode];
+    const max = MAP_INFO[mode].max(), min = MAP_INFO[mode].min ? MAP_INFO[mode].min() : 0;
     for (let v = 0; v < vals.length; v++) {
       let rgb;
       if (mode === 'curvature') rgb = diverge(vals[v] / max);
       else if (mode === 'overhang') rgb = vals[v] >= 1 ? [0.86, 0.2, 0.22] : [0.78 + vals[v] * 0.25, 0.8 - vals[v] * 0.2, 0.82 - vals[v] * 0.6];
-      else rgb = turbo(vals[v] / max);
+      else if (!Number.isFinite(vals[v])) rgb = [0.55, 0.57, 0.6];
+      else rgb = turbo((vals[v] - min) / Math.max(max - min, 1e-12));
       col[v * 3] = rgb[0]; col[v * 3 + 1] = rgb[1]; col[v * 3 + 2] = rgb[2];
     }
   }
@@ -344,7 +498,8 @@ function showLegend() {
       ticks = ['0°', '', `${PROCESSES[state.process].overhang}°`, '', '90°'];
     } else {
       bar = stops.join(',');
-      ticks = Array.from({ length: 5 }, (_, i) => Math.round((max * 1000 * i) / 4).toLocaleString('fr-FR'));
+      const min = MAP_INFO[mode].min ? MAP_INFO[mode].min() : 0;
+      ticks = Array.from({ length: 5 }, (_, i) => Math.round((min + ((max - min) * i) / 4) * 1000).toLocaleString('fr-FR'));
     }
     const extra = mode === 'curvature' ? `<div class="scale-legend"><span>${t('concave')}</span><span>${t('convexe')}</span></div>` : '';
     el.innerHTML = `<div>${t(MAP_INFO[mode].label)}</div><div class="colorbar" style="background:linear-gradient(90deg,${bar})"></div><div class="scale-legend">${ticks.map((x) => `<span>${x}</span>`).join('')}</div>${extra}`;
@@ -855,6 +1010,10 @@ function onAction(name) {
     busy(true, t('Perméabilité selon X'));
     flowWorker.postMessage({ cmd: 'tensor', id: ++flowId, params: geoParams(), maxSteps: 3000 });
     updatePanel();
+  } else if (name === 'oxygen' || name === 'seed' || name === 'tissue') {
+    runBio(name);
+  } else if (name === 'replaySeed') {
+    if (app.bio.seed) showSeeding(app.bio.seed);
   } else if (name === 'importStl') {
     stlInput.click();
   }
@@ -891,6 +1050,8 @@ const callbacks = {
   onRunFlow,
   onAction,
   beforeChange,
+  onSolver: () => { stopFlow(true); updatePanel(); saveSession(); },
+  onBio: () => { showTissue(); updatePanel(); saveSession(); },
 };
 let ctl = null;
 // Le panneau est reconstruit quand la liste des formes change (forme STL importee ou retiree).
@@ -914,6 +1075,7 @@ renderer.setAnimationLoop(() => {
   if (app.particles && app.flow && state.view.particles) {
     app.particles.update(dt, state.flow.speed, state.cell * 0.12);
   }
+  if (app.seedAnim) updateSeeding();
   if (app.recorder) {
     const s = Math.floor((performance.now() - app.recT0) / 1000);
     document.getElementById('rec-time').textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;

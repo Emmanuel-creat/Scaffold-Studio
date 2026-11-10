@@ -1,5 +1,18 @@
 # Journal des versions
 
+## 1.4.0 (novembre 2026)
+
+Quatrième vague : biologie et perfusion avancée.
+
+- Solveur de perfusion sur carte graphique (WebGPU), identique au processeur à 0,004 % près, repli automatique.
+- Condition de pression imposée sur l'éprouvette entière, validée à 0,5 % sur un canal plan.
+- Fluides : milieu de culture, milieu avec sérum, sang (Carreau), viscosité apparente et corrections.
+- Histogramme du cisaillement pariétal avec la plage stimulante de la littérature.
+- Oxygène dissous en perfusion et en culture statique, profil selon la hauteur, parois hypoxiques, carte d'oxygène sur la surface.
+- Ensemencement par perfusion animé : trajets des cellules, adhésion, efficacité et répartition selon la hauteur.
+- Croissance du tissu pilotée par la courbure, maillage du tissu formé de J7 à J56 et courbe de remplissage.
+- Correction des traînées de particules démesurées à la réapparition.
+
 ## 1.3.0 (novembre 2026)
 
 Troisième vague : analyses, fabrication et exports.

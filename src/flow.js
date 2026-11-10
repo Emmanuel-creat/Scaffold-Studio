@@ -102,12 +102,14 @@ export class Particles {
       f.sample(mx, my, mz, v);
       x += v[0] * h; y += v[1] * h; z += v[2] * h;
       this.life[i] -= dt;
-      const sp = Math.hypot(v[0], v[1], v[2]);
+      let sp = Math.hypot(v[0], v[1], v[2]);
       const out = z > Z || z < 0 || x < 0 || x > X || y < 0 || y > Y || f.fn.sdf(x, y, z) > 0;
       if (out || this.life[i] <= 0 || (sp < vmax * 0.01 && Math.random() < 0.02)) {
         this.spawn(i, z > Z);
         x = this.pos[o]; y = this.pos[o + 1]; z = this.pos[o + 2];
         f.sample(x, y, z, v);
+        // vitesse du nouveau point : sinon une trainee demesuree apparait a la reapparition
+        sp = Math.hypot(v[0], v[1], v[2]);
       }
       this.pos[o] = x; this.pos[o + 1] = y; this.pos[o + 2] = z;
       const t = Math.min(1, sp / vmax);

@@ -32,3 +32,22 @@ describe('Boltzmann sur reseau (TRT)', () => {
     expect(Math.abs(l.uz[0])).toBeLessThan(1e-12);
   });
 });
+
+describe('conditions de pression imposee', () => {
+  it('canal plan : meme permeabilite qu\'avec la force volumique', async () => {
+    const { LBM } = await import('../src/lbm.js');
+    const nx = 12, ny = 4, nz = 24;
+    const solid = new Uint8Array(nx * ny * nz);
+    for (let k = 0; k < nz; k++) for (let j = 0; j < ny; j++) { solid[0 + j * nx + k * nx * ny] = 1; solid[nx - 1 + j * nx + k * nx * ny] = 1; }
+    const a = new LBM(solid, nx, ny, nz, { bc: 'force', force: 1e-6 });
+    a.run({ maxSteps: 6000, tol: 1e-7 });
+    const b = new LBM(solid, nx, ny, nz, { bc: 'pressure', drho: 1e-3 });
+    b.run({ maxSteps: 8000, tol: 1e-7 });
+    const ka = a.permeability(), kb = b.permeability();
+    // canal de largeur 10 entre parois a mi-chemin : k = h^2 / 12 * (fraction fluide 10/12)
+    const exact = (10 * 10) / 12 * (10 / 12);
+    console.log('pression', kb.toFixed(3), 'force', ka.toFixed(3), 'exact', exact.toFixed(3));
+    expect(Math.abs(ka - exact) / exact).toBeLessThan(0.02);
+    expect(Math.abs(kb - exact) / exact).toBeLessThan(0.05);
+  });
+});

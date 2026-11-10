@@ -7,6 +7,7 @@ import { compressionCurve, fatigue, buckling, degradation, gradedModulus } from 
 import { lineChart, barChart } from './charts.js';
 import { buildEstimate } from './fabrication.js';
 import { fmt, pct, sci, scalePos } from './format.js';
+import { nonNewtonian, FLUIDS } from './bio.js';
 
 function scale(value, lo, hi, log, bands, labels) {
   const b = bands.map(([a, z, cls]) => {
@@ -81,7 +82,9 @@ export function renderMetrics(root, state, app) {
       wss ? metric(t('Cisaillement pariétal médian'), fmt(wss.median * 1000, 2), ' mPa', '', TIPS.wss) : '',
       wss ? metric(`${t('Surface entre')} ${fmt(state.flow.wssLow, 1)} ${t('et')} ${fmt(state.flow.wssHigh, 1)} mPa`, pct(wss.inWindow, 0), ' %',
         scale(wss.inWindow, 0, 1, false, [], ['0', '50 %', '100 %'])) : '',
-      `<span class="hint">${label} · ${(flowStatus.steps || 0).toLocaleString('fr-FR')} ${t('itérations')}</span>`,
+      `<span class="hint">${label} · ${(flowStatus.steps || 0).toLocaleString('fr-FR')} ${t('itérations')}${flowStatus.engine ? `<span class="engine">${flowStatus.engine === 'gpu' ? t('carte graphique') : t('processeur')}</span>` : ''}</span>`,
+      fluidCorrection(state, m, dp, wss),
+      wss ? wssHisto(wss) : '',
     ].join('');
   }
   if (tensor) {
@@ -104,6 +107,7 @@ export function renderMetrics(root, state, app) {
     ${advanced(state, m, fem)}
     ${resorption(state, m, fem)}
     <div class="m-group"><h3>${t('Perfusion')}</h3>${perf}</div>
+    ${biology(state, app)}
     <div class="m-group"><p class="hint">${t('Estimations de conception (Gibson-Ashby, Boltzmann sur réseau). À confirmer par éléments finis et par essais.')}</p></div>`;
 }
 
@@ -275,4 +279,79 @@ function compare(state, app) {
     <p class="hint">A : ${ref.label}</p>
     <div class="row2"><button class="btn" data-act="ref">${t('Figer l\'actuel')}</button><button class="btn" data-act="unref">${t('Effacer A')}</button></div>
   </div>`;
+}
+
+// Fluide non newtonien : viscosite apparente au cisaillement caracteristique des pores (point 49).
+function fluidCorrection(state, m, dp, wss) {
+  const fl = state.flow.fluid || 'medium';
+  const nn = nonNewtonian(fl, { inlet: state.flow.inlet, porosity: m.porosity, pore: m.pore.mean });
+  if (nn.newtonian && fl === 'medium') return '';
+  const r = nn.mu / MU;
+  const f = (v, u) => (v < 1 ? `${fmt(v * 1000, 1)} m${u}` : `${fmt(v, 2)} ${u}`);
+  return `<div class="kv" title="${t('Correction au premier ordre : la perte de charge et le cisaillement sont proportionnels à la viscosité')}">
+    <span>${t(FLUIDS[fl].label)}</span><b></b>
+    <span>${t('Cisaillement caractéristique')}</span><b>${fmt(nn.gamma, 0)} s⁻¹</b>
+    <span>${t('Viscosité apparente')}</span><b>${fmt(nn.mu * 1000, 2)} mPa·s</b>
+    ${Number.isFinite(dp) ? `<span>${t('Perte de charge corrigée')}</span><b>${f(dp * r, 'Pa')}</b>` : ''}
+    ${wss ? `<span>${t('Cisaillement médian corrigé')}</span><b>${fmt(wss.median * r * 1000, 2)} mPa</b>` : ''}
+  </div>`;
+}
+
+// Histogramme du cisaillement parietal en echelle log, avec la fenetre de la litterature.
+function wssHisto(wss) {
+  const lo = -3, hi = 2, nb = 25; // log10 mPa
+  const bins = Array.from({ length: nb }, (_, i) => [i, 0]);
+  for (let i = 0; i < wss.tau.length; i++) {
+    const v = Math.log10(Math.max(wss.tau[i] * 1000, 1e-6));
+    const b = Math.floor(((v - lo) / (hi - lo)) * nb);
+    if (b >= 0 && b < nb) bins[b][1]++;
+  }
+  const pos = (mpa) => (Math.log10(mpa) - lo) / (hi - lo);
+  return `<details class="sub"><summary>${t('Distribution du cisaillement')}</summary>
+    ${barChart({ bins, xlabel: 'mPa', labels: ['0,001', '0,018', '0,32', '5,6', '100'], band: [pos(0.05), pos(25)] })}
+    <span class="hint">${t('Bande verte : 0,05 à 25 mPa, plage stimulante rapportée pour les cellules osseuses en perfusion (McCoy et O\'Brien 2010)')}</span>
+  </details>`;
+}
+
+// Oxygene, ensemencement et croissance tissulaire.
+function biology(state, app) {
+  const b = app.bio || {};
+  const parts = [];
+  if (b.running) parts.push(`<p class="hint"><span class="spinner inline"></span> ${t('Calcul en cours…')}</p>`);
+  const ox = b.oxygen;
+  if (ox) {
+    const c0 = state.bio.c0, um = (v) => v * 1000;
+    const series = [
+      { pts: ox.statique.profile.map(([z, c]) => [z, um(c)]), cls: 'ref' },
+      { pts: ox.perfusion.profile.map(([z, c]) => [z, um(c)]), cls: 'acc' },
+    ];
+    parts.push(`<div class="chart-box"><div class="chart-title">${t('Oxygène moyen selon la hauteur')}</div>
+      ${lineChart({ series, xlabel: 'z (mm)', ylabel: 'µM', ymin: 0, ymax: um(c0) * 1.05, hlines: [{ y: um(state.bio.hypoxia), label: t('hypoxie') }] })}
+      <div class="legend-key"><span><i style="background:var(--accent)"></i>${t('perfusion')}</span><span><i style="background:var(--muted)"></i>${t('culture statique')}</span></div></div>`);
+    parts.push(`<div class="kv">
+      <span>${t('O₂ minimal sur les parois, perfusion')}</span><b>${fmt(um(ox.perfusion.cmin), 0)} µM</b>
+      <span>${t('O₂ minimal sur les parois, statique')}</span><b>${fmt(um(ox.statique.cmin), 0)} µM</b>
+      <span>${t('Parois hypoxiques, perfusion')}</span><b>${pct(ox.perfusion.hypoxicWall, 1)} %</b>
+      <span>${t('Parois hypoxiques, statique')}</span><b>${pct(ox.statique.hypoxicWall, 1)} %</b>
+    </div>`);
+    const ok = ox.perfusion.hypoxicWall < 0.05;
+    parts.push(`<span class="flag ${ok ? 'ok' : 'ko'}">${ok ? t('Oxygénation suffisante en perfusion') : t('Zones hypoxiques en perfusion : augmenter le débit ou réduire la hauteur')}</span>`);
+  }
+  const sd = b.seed;
+  if (sd) {
+    const Z = specimenBox(state.shape)[2];
+    parts.push(metric(t('Efficacité d\'ensemencement'), pct(sd.efficiency, 0), ' %', scale(sd.efficiency, 0, 1, false, [], ['0', '50 %', '100 %']),
+      t('Fraction des cellules injectées qui adhèrent à une paroi')));
+    parts.push(`<div class="chart-title">${t('Cellules adhérentes selon la hauteur')} · CV ${fmt(sd.cv, 2)}</div>
+      ${barChart({ bins: sd.bins.map((c, i) => [((i + 0.5) * Z) / 10, c]), cls: 'tis', xlabel: 'z (mm)', labels: [0, Z / 4, Z / 2, (3 * Z) / 4, Z].map((v) => fmt(v, 1)) })}
+      <span class="hint">${t('Sorties par le haut')} ${pct(sd.exited, 0)} % · ${t('retombées à l\'entrée')} ${pct(sd.fellBack, 0)} % · ${t('durée simulée')} ${fmt(sd.duration, 0)} s</span>`);
+  }
+  const ti = b.tissue;
+  if (ti) {
+    parts.push(`<div class="chart-box"><div class="chart-title">${t('Remplissage des pores par le tissu')}${ti.halfDay != null ? ` · 50 % ${t('au jour')} ${fmt(ti.halfDay, 0)}` : ''}</div>
+      ${lineChart({ series: [{ pts: ti.curve.map(([d, f]) => [d, f * 100]), cls: 'tis' }], xlabel: t('jours'), ylabel: '%', ymin: 0, ymax: 100, vlines: [{ x: Number(state.bio.day) }] })}</div>
+      <p class="hint">${t('Croissance pilotée par la courbure : les pores étroits et concaves se comblent d\'abord (Rumpler 2008, Bidan 2012)')}</p>`);
+  }
+  if (!parts.length) parts.push(`<p class="hint">${t('Calcule l\'oxygène, ensemence les cellules ou simule la croissance du tissu depuis la section Biologie.')}</p>`);
+  return `<div class="m-group"><h3>${t('Biologie')}</h3>${parts.join('')}</div>`;
 }

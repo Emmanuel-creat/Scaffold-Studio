@@ -37,7 +37,9 @@ Ces compromis se calculent d'habitude dans plusieurs logiciels lourds (CAO, mail
 | Résorption | Évolution de la masse et de la rigidité sur 36 mois pour le magnésium, le zinc, le β-TCP, le PCL et le PLA |
 | Fabrication | Vérification de l'épaisseur minimale selon le procédé, lissage de Taubin, aperçu des couches d'impression, surplombs, plateau de fabrication avec le nombre de pièces, temps et coût estimés |
 | Perfusion | Boltzmann sur réseau D3Q19 à collision TRT, perméabilité de Darcy, tenseur de perméabilité selon X, Y et Z, perte de charge, particules traçantes |
-| Cisaillement | Carte de cisaillement pariétal et part de la surface dans la fenêtre cible |
+| Cisaillement | Carte de cisaillement pariétal, part de la surface dans la fenêtre cible, histogramme comparé à la plage de la littérature (0,05 à 25 mPa) |
+| Solveur | Calcul sur carte graphique (WebGPU) avec repli automatique sur le processeur, pression imposée sur l'éprouvette entière, milieu de culture, sérum ou sang (Carreau) |
+| Biologie | Oxygène dissous en perfusion et en culture statique (advection, diffusion, consommation de Michaelis-Menten aux parois), carte d'oxygène sur la surface, zones hypoxiques, ensemencement par perfusion animé avec efficacité et répartition en hauteur, croissance du tissu pilotée par la courbure jour par jour |
 | Visualisation | Coupe selon X, Y ou Z, transparence, rotation, mode vol à travers les pores |
 | Projet | Annuler et rétablir, enregistrement et ouverture d'un projet, lien partageable, aperçu rapide puis résolution finale, interface en français ou en anglais |
 | Exports | STL et 3MF pour l'impression, VTK surface avec les cartes (ParaView), maillage voxel Abaqus avec essai de compression, champ de vitesse VTK, mesures CSV, rapport de conception HTML imprimable en PDF, capture PNG, vidéo MP4 ou WebM |
@@ -114,7 +116,11 @@ Les méthodes sont détaillées dans le [cahier des charges](docs/CAHIER_DES_CHA
 - **Mécanique :** loi de Gibson-Ashby, E = C · Es · ρ*ⁿ avec n = 2 en réseau et 1,5 en feuillet.
 - **Éléments finis :** hexaèdres à 8 noeuds sur la cellule voxelisée (24³), conditions périodiques, six déformations unitaires, gradient conjugué préconditionné sans matrice assemblée. Le tenseur effectif donne les modules d'ingénierie ; la superposition des six cas donne la contrainte de von Mises pour une compression selon z. Quatre porosités supplémentaires fournissent l'ajustement E*/Es = C · ρⁿ.
 - **Modèles d'essai :** courbe de compression élastique, plateau et densification (εD = 1 − 1,4 ρ), fatigue par loi de Basquin normalisée, flambement d'Euler des struts, résorption par érosion de surface appliquée à la transformée de distance du solide ou par hydrolyse en masse.
-- **Perfusion :** Boltzmann sur réseau D3Q19, collision à deux temps de relaxation (TRT, paramètre magique 3/16) qui rend la perméabilité indépendante de la viscosité numérique, rebond à mi-chemin sur les parois, force volumique équivalente à un gradient de pression, perméabilité par la loi de Darcy. Sans gradient, le calcul porte sur une cellule périodique, ce qui donne la perméabilité du réseau infini.
+- **Perfusion :** Boltzmann sur réseau D3Q19, collision à deux temps de relaxation (TRT, paramètre magique 3/16) qui rend la perméabilité indépendante de la viscosité numérique, rebond à mi-chemin sur les parois, force volumique équivalente à un gradient de pression, perméabilité par la loi de Darcy. Sans gradient, le calcul porte sur une cellule périodique, ce qui donne la perméabilité du réseau infini. Le même schéma tourne sur carte graphique (WebGPU, un fil par noeud, propagation en lecture) ; la condition de pression imposée remet les tranches d'entrée et de sortie à l'équilibre à densité fixée.
+- **Oxygène :** état stationnaire de D ∇²c − u · ∇c = consommation, avec D = 3 × 10⁻⁹ m²/s, consommation de Michaelis-Menten des cellules adhérentes sur chaque face de paroi, schéma amont pour l'advection, Gauss-Seidel sur-relaxé. La cellule périodique est répétée sur la hauteur de la pièce ; la culture statique reçoit le milieu par les deux faces.
+- **Ensemencement :** cellules injectées à l'entrée, transportées par le champ de vitesse et sédimentant à 9 µm/s (loi de Stokes pour une cellule de 15 µm), adhésion au contact d'une paroi avec une probabilité réglable.
+- **Croissance tissulaire :** modèle de croissance pilotée par la courbure (Rumpler 2008, Bidan 2012). Dans un pore de rayon local R, un point à la distance d de la paroi est comblé au temps d (2R − d) / (2λ).
+- **Fluide non newtonien :** viscosité de Carreau du sang au taux de cisaillement caractéristique des pores, perte de charge et cisaillement corrigés au premier ordre.
 
 Tests automatiques :
 
@@ -122,6 +128,12 @@ Tests automatiques :
 | --- | --- |
 | Écoulement de Poiseuille entre deux plaques | écart inférieur à 1 % avec la solution analytique, indépendant de la viscosité |
 | Réseau cubique de sphères (Sangani et Acrivos) | écart de 0,4 % sur la perméabilité |
+| Pression imposée sur un canal plan | écart de 0,5 % avec la solution exacte |
+| Solveur sur carte graphique | même perméabilité que le processeur à 0,004 % près, selon z et selon x |
+| Oxygène | concentration constante sans consommation, bilan de masse à 0,3 %, perfusion mieux oxygénée que la culture statique |
+| Croissance tissulaire | canal cylindrique à moitié comblé au temps prévu (0,58 pour 0,5) |
+| Ensemencement | sédimentation sans écoulement, cellules emportées par un écoulement rapide |
+| Viscosité du sang | Carreau, rhéofluidifiant entre μ0 et μ∞ |
 | 9 surfaces TPMS | porosité visée atteinte, anisotropie, rotation, formes et peau vérifiées |
 | Import STL | volume d'un cube voxelisé à 8 % près |
 | Projet | lien partageable aller-retour, annuler et rétablir |
@@ -142,7 +154,10 @@ src/
   tpms.js          surfaces, seuils de porosité, champ implicite
   mesher.js        maillage surface nets, volume et aire
   metrics.js       mesures morphologiques et mécaniques, matériaux
-  lbm.js           solveur de Boltzmann sur réseau D3Q19
+  lbm.js           solveur de Boltzmann sur réseau D3Q19 (force ou pression)
+  lbm.gpu.js       même solveur sur carte graphique (WebGPU)
+  bio.js           oxygène, ensemencement, croissance tissulaire, fluide non newtonien
+  bio.worker.js    calculs biologiques hors du fil principal
   geo.worker.js    calcul géométrie et mesures hors du fil principal
   flow.worker.js   calcul de perfusion hors du fil principal
   flow.js          particules, cisaillement, trajectoire de vol

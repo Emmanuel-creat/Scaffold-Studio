@@ -189,3 +189,7 @@ table.cmp td.down { color: var(--warn); }
 .menu-list button small { color: var(--muted); font-size: 11px; }
 @media (max-width: 1560px) { #btn-photo span, #btn-rec span, #btn-report span { display: none; } }
 @media (min-width: 1001px) { .topbar { flex-wrap: nowrap; } .presets { min-width: 0; } .presets select { max-width: 300px; } }
+.chart .band-ref { fill: var(--good); opacity: .14; }
+.chart .line.tis { stroke: #d7838a; }
+.chart .bar.tis { fill: #d7838a; opacity: .8; }
+.engine { display: inline-block; font: 500 10px var(--mono); padding: 1px 5px; border: 1px solid var(--line); border-radius: 3px; color: var(--muted); margin-left: 4px; }

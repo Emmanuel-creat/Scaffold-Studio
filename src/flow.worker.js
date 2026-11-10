@@ -1,5 +1,8 @@
 import { makeFieldFn, specimenBox } from './tpms.js';
 import { LBM } from './lbm.js';
+import { LBMGPU, gpuAvailable } from './lbm.gpu.js';
+
+let gpuOk = null;
 
 let currentId = null;
 
@@ -9,7 +12,8 @@ export function flowDomain(params, { cellRes = 32, domainRes = 48 } = {}) {
   const g = params.gradient || { kind: 'none' };
   const rot = params.rotation || {};
   const an = params.aniso || { x: 1, y: 1, z: 1 };
-  const periodic = g.kind === 'none' && params.shape.kind === 'cube' && !(params.skin && params.skin.t > 0)
+  const pressure = params.flow && params.flow.bc === 'pressure';
+  const periodic = !pressure && g.kind === 'none' && params.shape.kind === 'cube' && !(params.skin && params.skin.t > 0)
     && !(params.shape.hole > 0) && !rot.x && !rot.y && !rot.z;
   if (periodic) {
     const size = [params.cell * (an.x || 1), params.cell * (an.y || 1), params.cell * (an.z || 1)];
@@ -33,14 +37,28 @@ export function flowDomain(params, { cellRes = 32, domainRes = 48 } = {}) {
     const out = fn.sdf(x, y, prism ? Z / 2 : z) > 0;
     solid[q++] = out || fn.value(x, y, prism ? Math.min(Math.max(z, 1e-6), Z - 1e-6) : z) < 0 ? 1 : 0;
   }
-  return { solid, nx, ny, nz, size: [X, Y, Z], period: null, dx: X / nx };
+  return { solid, nx, ny, nz, size: [X, Y, Z], period: null, dx: X / nx, bc: pressure ? 'pressure' : 'force' };
 }
 
-async function runLbm(dom, id, dir, maxSteps, onPost) {
-  const lbm = new LBM(dom.solid, dom.nx, dom.ny, dom.nz, { tau: 1, force: 1e-5, dir });
+// Moteur : carte graphique (WebGPU) si disponible et en force volumique, sinon processeur (point 41).
+async function makeSolver(dom, dir, bc, wantGpu) {
+  if (wantGpu && bc === 'force') {
+    if (gpuOk === null) gpuOk = await gpuAvailable();
+    if (gpuOk) {
+      try { const g = await LBMGPU.create(dom.solid, dom.nx, dom.ny, dom.nz, { tau: 1, force: 1e-5, dir }); g.engine = 'gpu'; return g; } catch (err) { gpuOk = false; }
+    }
+  }
+  const c = new LBM(dom.solid, dom.nx, dom.ny, dom.nz, { tau: 1, force: 1e-5, dir, bc });
+  c.engine = 'cpu';
+  return c;
+}
+
+async function runLbm(dom, id, dir, maxSteps, onPost, wantGpu = true) {
+  const bc = !dom.period && dom.bc === 'pressure' && dir === 'z' ? 'pressure' : 'force';
+  const lbm = await makeSolver(dom, dir, bc, wantGpu);
   let prev = 0, converged = false, last = 0;
   while (lbm.steps < maxSteps && currentId === id) {
-    const u = lbm.step(25);
+    const u = await lbm.step(lbm.engine === 'gpu' ? 50 : 25);
     const rel = Math.abs(u - prev) / Math.max(Math.abs(u), 1e-30);
     prev = u;
     const now = performance.now();
@@ -48,6 +66,7 @@ async function runLbm(dom, id, dir, maxSteps, onPost) {
     if (lbm.steps > 100 && rel < 2e-4) { converged = true; break; }
     await new Promise((r) => setTimeout(r, 0));
   }
+  if (lbm.destroy) setTimeout(() => lbm.destroy(), 0);
   return { lbm, converged };
 }
 
@@ -61,7 +80,7 @@ self.onmessage = async (e) => {
   if (msg.cmd === 'tensor') {
     const k = {};
     for (const dir of ['x', 'y', 'z']) {
-      const { lbm } = await runLbm(dom, id, dir, msg.maxSteps || 3000);
+      const { lbm } = await runLbm(dom, id, dir, msg.maxSteps || 3000, null, params.flow.gpu !== false);
       if (currentId !== id) return;
       k[dir] = lbm.permeability() * dxm * dxm;
       self.postMessage({ id, type: 'tensor-progress', dir, k: k[dir] });
@@ -72,7 +91,7 @@ self.onmessage = async (e) => {
   if (msg.cmd !== 'start') return;
   const post = (lbm, done) => {
     self.postMessage({
-      id, type: done ? 'done' : 'progress', steps: lbm.steps,
+      id, type: done ? 'done' : 'progress', steps: lbm.steps, engine: lbm.engine,
       permeability: lbm.permeability() * dxm * dxm,
       field: {
         nx: dom.nx, ny: dom.ny, nz: dom.nz, dx: dom.dx, period: dom.period, size: dom.size,
@@ -80,7 +99,7 @@ self.onmessage = async (e) => {
       },
     });
   };
-  const { lbm, converged } = await runLbm(dom, id, 'z', msg.maxSteps || 3000, post);
+  const { lbm, converged } = await runLbm(dom, id, 'z', msg.maxSteps || 3000, post, params.flow.gpu !== false);
   const stopped = currentId !== id;
   post(lbm, true);
   self.postMessage({ id, type: 'end', converged, stopped });

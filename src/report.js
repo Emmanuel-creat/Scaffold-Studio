@@ -20,6 +20,9 @@ export const REFERENCES = [
   'Rumpler M. et al. The effect of geometry on three-dimensional tissue growth. Journal of the Royal Society Interface 5, 2008.',
   'Zadpoor A.A. Mechanical performance of additively manufactured meta-biomaterials. Acta Biomaterialia 85, 2019.',
   'Hollister S.J. Porous scaffold design for tissue engineering. Nature Materials 4, 2005.',
+  'Bidan C.M. et al. How linear tension converts to curvature: geometric control of bone tissue growth. PLoS ONE 7, 2012.',
+  'McCoy R.J., O\'Brien F.J. Influence of shear stress in perfusion bioreactor cultures for the development of three-dimensional bone tissue constructs. Tissue Engineering Part B 16, 2010.',
+  'Cho Y.I., Kensey K.R. Effects of the non-Newtonian viscosity of blood on flows in a diseased arterial vessel. Biorheology 28, 1991.',
 ];
 
 const CSS = `
