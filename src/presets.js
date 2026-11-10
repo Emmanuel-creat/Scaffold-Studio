@@ -9,6 +9,7 @@ export const DEFAULT = {
   material: 'ti64', customMaterial: { E: 10, sy: 100, rho: 2 },
   process: 'lpbf', resKey: 'mid', smooth: 2,
   target: { strut: 400, E: 3 },
+  gaFits: {},
   view: { cut: 100, cutAxis: 'x', opacity: 100, autoRotate: true, particles: true },
   flow: { inlet: 0.5, particles: 5000, speed: 3, wss: false, wssLow: 0.1, wssHigh: 10 },
 };

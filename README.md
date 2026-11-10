@@ -29,6 +29,9 @@ Ces compromis se calculent d'habitude dans plusieurs logiciels lourds (CAO, mail
 | Design inverse | Porosité calculée pour obtenir une épaisseur de strut visée ou une rigidité visée |
 | Morphologie | Porosité mesurée, diamètre de pore et épaisseur de strut par sphère inscrite, surface spécifique, interconnectivité |
 | Mécanique | Module de Young et limite d'élasticité estimés (Gibson-Ashby) pour 10 matériaux et un matériau personnalisé, comparés aux plages de l'os, masse |
+| Éléments finis | Homogénéisation périodique de la cellule par éléments finis voxel : tenseur de rigidité, modules Ex, Ey, Ez, cisaillement, anisotropie de Zener, carte de von Mises sur la surface, concentration de contrainte, loi de Gibson-Ashby ajustée pour la surface choisie, module d'une éprouvette à gradient |
+| Essais simulés | Courbe de compression modèle avec grandeurs de la norme ISO 13314 (plateau, densification, énergie absorbée), endurance en fatigue, élancement et flambement des struts |
+| Résorption | Évolution de la masse et de la rigidité sur 36 mois pour le magnésium, le zinc, le β-TCP, le PCL et le PLA |
 | Fabrication | Vérification de l'épaisseur minimale selon le procédé, lissage de Taubin sans perte de volume |
 | Perfusion | Boltzmann sur réseau D3Q19 à collision TRT, perméabilité de Darcy, tenseur de perméabilité selon X, Y et Z, perte de charge, particules traçantes |
 | Cisaillement | Carte de cisaillement pariétal et part de la surface dans la fenêtre cible |
@@ -106,6 +109,8 @@ Les méthodes sont détaillées dans le [cahier des charges](docs/CAHIER_DES_CHA
 - **Géométrie :** le seuil de chaque surface est calculé par quantile sur une cellule unité pour atteindre exactement la porosité visée, puis l'isosurface est maillée par surface nets (maillage fermé et orienté).
 - **Morphologie :** transformée de distance euclidienne exacte (Felzenszwalb et Huttenlocher), diamètres pris aux maxima locaux.
 - **Mécanique :** loi de Gibson-Ashby, E = C · Es · ρ*ⁿ avec n = 2 en réseau et 1,5 en feuillet.
+- **Éléments finis :** hexaèdres à 8 noeuds sur la cellule voxelisée (24³), conditions périodiques, six déformations unitaires, gradient conjugué préconditionné sans matrice assemblée. Le tenseur effectif donne les modules d'ingénierie ; la superposition des six cas donne la contrainte de von Mises pour une compression selon z. Quatre porosités supplémentaires fournissent l'ajustement E*/Es = C · ρⁿ.
+- **Modèles d'essai :** courbe de compression élastique, plateau et densification (εD = 1 − 1,4 ρ), fatigue par loi de Basquin normalisée, flambement d'Euler des struts, résorption par érosion de surface appliquée à la transformée de distance du solide ou par hydrolyse en masse.
 - **Perfusion :** Boltzmann sur réseau D3Q19, collision à deux temps de relaxation (TRT, paramètre magique 3/16) qui rend la perméabilité indépendante de la viscosité numérique, rebond à mi-chemin sur les parois, force volumique équivalente à un gradient de pression, perméabilité par la loi de Darcy. Sans gradient, le calcul porte sur une cellule périodique, ce qui donne la perméabilité du réseau infini.
 
 Tests automatiques :
@@ -117,6 +122,9 @@ Tests automatiques :
 | 9 surfaces TPMS | porosité visée atteinte, anisotropie, rotation, formes et peau vérifiées |
 | Import STL | volume d'un cube voxelisé à 8 % près |
 | Projet | lien partageable aller-retour, annuler et rétablir |
+| Éléments finis sur bloc plein | tenseur isotrope retrouvé à 10⁻⁶ près |
+| Éléments finis sur stratifié de plaques | module égal à la fraction solide (borne de Voigt exacte) |
+| Ajustement de Gibson-Ashby | coefficients retrouvés sur une loi puissance connue |
 | Volume du maillage par rapport à la porosité visée | écart inférieur à 3 points sur les 10 combinaisons surface et mode |
 | Transformée de distance | distances exactes sur un cas de référence |
 | Interconnectivité d'un gyroïde | 100 % |
@@ -137,6 +145,10 @@ src/
   main.js          scène 3D, exports, raccourcis
   ui.js, panel.js  panneaux de paramètres et de mesures
   stl.js           import STL et distance signée
+  fem.js           éléments finis voxel, homogénéisation, von Mises
+  fem.worker.js    calcul éléments finis hors du fil principal
+  mechanics.js     compression, fatigue, flambement, résorption
+  charts.js        graphiques SVG du panneau
   project.js       projet, lien partageable, historique
   i18n.js          traduction français et anglais
 tests/             tests unitaires (Vitest)

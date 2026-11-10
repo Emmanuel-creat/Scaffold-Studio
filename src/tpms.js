@@ -214,7 +214,7 @@ export function porosityAt(params, x, y, z, sdf) {
   return params.porosity + (g.p1 - params.porosity) * gradientT(params, x, y, z, sdf);
 }
 
-function rotationMatrix(rot) {
+export function rotationMatrix(rot) {
   const rx = ((rot && rot.x) || 0) * Math.PI / 180, ry = ((rot && rot.y) || 0) * Math.PI / 180, rz = ((rot && rot.z) || 0) * Math.PI / 180;
   const cx = cos(rx), sx = sin(rx), cy = cos(ry), sy = sin(ry), cz = cos(rz), sz = sin(rz);
   // R = Rz * Ry * Rx

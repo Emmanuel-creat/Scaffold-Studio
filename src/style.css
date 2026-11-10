@@ -141,3 +141,30 @@ dialog button { padding: 6px 14px; border-radius: 6px; border: 1px solid var(--l
   .actions button span { display: none; }
 }
 @media (prefers-reduced-motion: reduce) { .spinner, .hud .dot { animation: none; } }
+
+/* Elements finis et graphiques */
+.fem-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.fem-grid div { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 6px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.fem-grid b { font: 600 10px var(--mono); color: var(--muted); }
+.fem-grid span { font: 12px var(--mono); white-space: nowrap; }
+.fem-grid small { color: var(--muted); font-size: 10px; }
+.chart-box { display: flex; flex-direction: column; gap: 4px; }
+.chart-title { font-size: 11.5px; color: var(--muted); }
+.chart-title small { font-size: 10.5px; }
+.chart { width: 100%; height: auto; display: block; }
+.chart .grid { stroke: var(--line); stroke-width: 1; }
+.chart .tick { fill: var(--muted); font: 8.5px var(--mono); }
+.chart .tick.lab { fill: var(--ink); }
+.chart .axis { fill: var(--muted); font: 9px var(--font); }
+.chart .line { fill: none; stroke-width: 1.8; stroke-linejoin: round; }
+.chart .line.acc { stroke: var(--accent); }
+.chart .line.ref { stroke: var(--muted); stroke-dasharray: 3 3; stroke-width: 1.2; }
+.chart .line.bone { stroke: var(--bone); }
+.chart .dot { fill: var(--accent); stroke: var(--panel); stroke-width: 1; }
+.chart .vline { stroke: var(--warn); stroke-dasharray: 2 3; stroke-width: 1; }
+.chart .band { fill: var(--bone); opacity: .12; }
+.kv { display: grid; grid-template-columns: 1fr auto; gap: 3px 10px; font-size: 12px; }
+.kv span { color: var(--muted); }
+.kv b { font: 500 12px var(--mono); text-align: right; }
+.spinner.inline { display: inline-block; width: 11px; height: 11px; vertical-align: -1px; border-width: 1.5px; }
+.btn[aria-pressed=true] { border-color: var(--accent); color: var(--accent); }

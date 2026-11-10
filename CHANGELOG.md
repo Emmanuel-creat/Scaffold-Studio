@@ -1,5 +1,18 @@
 # Journal des versions
 
+## 1.2.0 (novembre 2026)
+
+Deuxième vague : mécanique.
+
+- Éléments finis voxel : homogénéisation périodique, tenseur de rigidité, modules Ex, Ey, Ez, cisaillement, anisotropie.
+- Carte de von Mises sur la surface du scaffold et concentration de contrainte, première plastification.
+- Loi de Gibson-Ashby ajustée par éléments finis pour chaque surface, reprise dans les mesures.
+- Module d'une éprouvette à gradient (Voigt par tranche, Reuss selon la hauteur).
+- Courbe de compression modèle et grandeurs ISO 13314.
+- Endurance en fatigue, élancement et flambement des struts.
+- Résorption du magnésium, du zinc, du β-TCP, du PCL et du PLA sur 36 mois.
+- Graphiques intégrés au panneau des mesures, nouvelles colonnes dans le rapport CSV.
+
 ## 1.1.0 (novembre 2026)
 
 Première vague du plan des 100 améliorations : géométrie, perfusion validée et confort de travail.

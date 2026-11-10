@@ -156,6 +156,7 @@ export function computeMetrics(params, field, mesh) {
   const dtSolid = edt3d(voidOrOut, nx, ny, nz);
   const pore = stats(ridgeDiameters(dtVoid, voidIn, field, hx));
   const strut = stats(ridgeDiameters(dtSolid, solidIn, field, hx));
+  const erosion = unitErosion(params, params.porosity);
 
   const mat = materialOf(params);
   const rel = Math.max(0, 1 - porosity);
@@ -180,7 +181,46 @@ export function computeMetrics(params, field, mesh) {
     printable: strut.p10 >= proc.minFeature,
     minFeature: proc.minFeature,
     triangles: mesh.indices.length / 3,
+    erosion,
   };
+}
+
+// Courbe d'erosion sur un bloc de 2 x 2 x 2 cellules a resolution fine (seul le centre est compte).
+export function unitErosion(params, porosity, n = 36) {
+  const p = { ...params, porosity, gradient: { kind: 'none' }, rotation: null, skin: null };
+  const fn = makeFieldFn(p);
+  const N = 2 * n, h = params.cell / n;
+  const solid = new Uint8Array(N * N * N), voidm = new Uint8Array(N * N * N);
+  let q = 0;
+  for (let k = 0; k < N; k++) for (let j = 0; j < N; j++) for (let i = 0; i < N; i++, q++) {
+    const s = fn.tpms((i + 0.5) * h, (j + 0.5) * h, (k + 0.5) * h) < 0;
+    solid[q] = s ? 1 : 0; voidm[q] = s ? 0 : 1;
+  }
+  const dt = edt3d(voidm, N, N, N);
+  const centre = new Uint8Array(N * N * N);
+  for (let k = n / 2; k < N - n / 2; k++) for (let j = n / 2; j < N - n / 2; j++) for (let i = n / 2; i < N - n / 2; i++) {
+    const pp = i + j * N + k * N * N;
+    centre[pp] = solid[pp];
+  }
+  return erosionCurve(dt, centre, h);
+}
+
+// Fraction de solide restante apres une erosion de surface d'epaisseur delta (mm).
+export function erosionCurve(dtSolid, solidIn, h, steps = 24) {
+  const ds = [];
+  for (let p = 0; p < solidIn.length; p++) if (solidIn[p]) ds.push((Math.sqrt(dtSolid[p]) - 0.5) * h);
+  if (!ds.length) return { depth: [0], remaining: [1] };
+  ds.sort((a, b) => a - b);
+  const maxD = ds[ds.length - 1];
+  const depth = [], remaining = [];
+  let q = 0;
+  for (let i = 0; i <= steps; i++) {
+    const d = (maxD * i) / steps;
+    while (q < ds.length && ds[q] <= d) q++;
+    depth.push(d);
+    remaining.push(i === 0 ? 1 : (ds.length - q) / ds.length);
+  }
+  return { depth, remaining };
 }
 
 // Epaisseur de strut moyenne (mm) d'un reseau infini, estimee sur un bloc de 2 x 2 x 2 cellules.
@@ -223,7 +263,8 @@ export function porosityForStrut(params, target) {
 // par un ajustement sur les elements finis quand il a ete calcule pour cette surface.
 export const GA_FIT = {};
 export function gaCoeffs(params) {
-  const fit = GA_FIT[`${params.type}|${params.mode}`];
+  const key = `${params.type}|${params.mode}`;
+  const fit = (params.gaFits && params.gaFits[key]) || GA_FIT[key];
   if (fit) return fit;
   return params.mode === 'sheet' ? { C: 0.6, n: 1.5 } : { C: 1, n: 2 };
 }

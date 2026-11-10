@@ -6,9 +6,10 @@ import { PRESETS, applyPreset } from './presets.js';
 import { buildControls } from './ui.js';
 import { renderMetrics, pressureDrop } from './panel.js';
 import { FlowField, Particles, wallShear, flyPath, WSS_RANGE } from './flow.js';
-import { specimenBox, SURFACES, fitWholeCells, gridSize } from './tpms.js';
+import { specimenBox, SURFACES, fitWholeCells, gridSize, rotationMatrix } from './tpms.js';
 import { materialOf, porosityForE } from './metrics.js';
 import { parseSTL, normalize, stlToSdf } from './stl.js';
+import { compressionCurve, fatigue } from './mechanics.js';
 import { History, serialize, deserialize, encodeHash, decodeHash } from './project.js';
 import { t, getLang, setLang, translatePage } from './i18n.js';
 import { turbo } from './format.js';
@@ -86,7 +87,7 @@ const backMat = new THREE.MeshStandardMaterial({ side: THREE.BackSide, color: 0x
 
 function applyLook() {
   const look = LOOKS[state.material] || LOOKS.custom;
-  const wss = state.flow.wss && app.wss;
+  const wss = (state.flow.wss && app.wss) || (app.fem && app.fem.showVm && app.fem.result);
   frontMat.vertexColors = !!wss;
   frontMat.color.set(wss ? 0xffffff : look.color);
   frontMat.metalness = wss ? 0 : look.metalness;
@@ -162,6 +163,7 @@ function onGeoMessage(e) {
   setMesh(d.mesh);
   app.metrics = d.metrics;
   app.wss = null;
+  if (app.fem && app.fem.showVm && app.fem.key === femKey()) colorVm();
   applyLook();
   updatePanel();
   updateDims();
@@ -265,6 +267,7 @@ function computeWss() {
   if (!app.flow || !app.mesh) return;
   const g = app.mesh.geometry;
   const res = wallShear(g.attributes.position.array, g.attributes.normal.array, app.flow, state.flow.wssLow, state.flow.wssHigh);
+  if (app.fem) app.fem.showVm = false;
   g.attributes.color.array.set(res.colors);
   g.attributes.color.needsUpdate = true;
   app.wss = res;
@@ -274,8 +277,15 @@ function computeWss() {
 
 function showLegend() {
   const el = document.getElementById('hud-legend');
-  if (!state.flow.wss || !app.wss) { el.hidden = true; return; }
   const stops = Array.from({ length: 11 }, (_, i) => { const c = turbo(i / 10).map((v) => Math.round(v * 255)); return `rgb(${c}) ${i * 10}%`; });
+  if (app.fem && app.fem.showVm && app.fem.result) {
+    const top = app.fem.result.kt99;
+    const ticks = Array.from({ length: 5 }, (_, i) => ((top * i) / 4).toLocaleString('fr-FR', { maximumFractionDigits: 1 }));
+    el.innerHTML = `<div>${t('Von Mises / contrainte appliquée')}</div><div class="colorbar" style="background:linear-gradient(90deg,${stops.join(',')})"></div><div class="scale-legend">${ticks.map((x) => `<span>${x}</span>`).join('')}</div>`;
+    el.hidden = false;
+    return;
+  }
+  if (!state.flow.wss || !app.wss) { el.hidden = true; return; }
   const ticks = Array.from({ length: 5 }, (_, i) => {
     const v = 10 ** (WSS_RANGE[0] + (i * (WSS_RANGE[1] - WSS_RANGE[0])) / 4) * 1000;
     return Number(v.toPrecision(v < 1 ? 1 : 2)).toLocaleString('fr-FR');
@@ -305,7 +315,8 @@ function updateDims() {
 }
 
 function updatePanel() {
-  renderMetrics(document.getElementById('metrics'), state, app.metrics, app.flowStatus, app.flow, app.wss, app.tensor);
+  if (app.fem && app.fem.key && app.fem.key !== femKey()) { app.fem = null; applyLook(); showLegend(); }
+  renderMetrics(document.getElementById('metrics'), state, app.metrics, app.flowStatus, app.flow, app.wss, app.tensor, app.fem);
   const p = document.getElementById('flow-progress');
   if (p) p.style.width = app.flowStatus.state === 'idle' ? '0%' : `${Math.min(100, ((app.flowStatus.steps || 0) / 3000) * 100)}%`;
   if (p && ['converged', 'max'].includes(app.flowStatus.state)) p.style.width = '100%';
@@ -401,6 +412,14 @@ document.getElementById('btn-report').onclick = () => {
     ['Perméabilité', app.flowStatus.permeability ?? '', 'm2'],
     ['Perte de charge', app.flowStatus.permeability ? pressureDrop(state, app.flowStatus.permeability) : '', 'Pa'],
     ['Perméabilité kx', app.tensor?.k?.x ?? '', 'm2'], ['Perméabilité ky', app.tensor?.k?.y ?? '', 'm2'], ['Perméabilité kz', app.tensor?.k?.z ?? '', 'm2'],
+    ['Module Ex (éléments finis)', app.fem?.result ? app.fem.result.eng.Ex * materialOf(state).E : '', 'GPa'],
+    ['Module Ey (éléments finis)', app.fem?.result ? app.fem.result.eng.Ey * materialOf(state).E : '', 'GPa'],
+    ['Module Ez (éléments finis)', app.fem?.result ? app.fem.result.eng.Ez * materialOf(state).E : '', 'GPa'],
+    ['Concentration de contrainte p99', app.fem?.result?.kt99 ?? '', ''],
+    ['Gibson-Ashby C', app.fem?.result?.fit.C ?? '', ''], ['Gibson-Ashby n', app.fem?.result?.fit.n ?? '', ''],
+    ['Contrainte de plateau (modèle)', compressionCurve(state, m).plateau, 'MPa'],
+    ['Énergie absorbée à 50 % (modèle)', compressionCurve(state, m).W50, 'MJ/m3'],
+    ['Endurance à 1e6 cycles (modèle)', fatigue(state, m).endurance, 'MPa'],
     ['Vitesse d\'entrée', state.flow.inlet, 'mm/s'],
     ['Cisaillement médian', app.wss ? app.wss.median * 1000 : '', 'mPa'],
     ['Surface dans la fenêtre cible', app.wss ? app.wss.inWindow * 100 : '', '%'],
@@ -451,6 +470,79 @@ window.addEventListener('keydown', (e) => {
   else if ((e.ctrlKey || e.metaKey) && k === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
   else if ((e.ctrlKey || e.metaKey) && (k === 'y' || (k === 'z' && e.shiftKey))) { e.preventDefault(); redo(); }
   else if ((e.ctrlKey || e.metaKey) && k === 's') { e.preventDefault(); saveProject(); }
+});
+
+// ---------- Elements finis (worker) ----------
+let femWorker = null, femId = 0;
+const femKey = () => JSON.stringify([state.type, state.mode, state.porosity, state.cell, state.aniso]);
+function runFem() {
+  if (femWorker) femWorker.terminate();
+  femWorker = new Worker(new URL('./fem.worker.js', import.meta.url), { type: 'module' });
+  const id = ++femId;
+  app.fem = { running: true, stage: t('Voxelisation de la cellule'), key: femKey() };
+  femWorker.onmessage = (e) => {
+    const d = e.data;
+    if (d.id !== femId) return;
+    if (d.stage) { app.fem.stage = d.stage; app.fem.detail = d.detail; updateFemStage(); return; }
+    if (!d.ok) { app.fem = { error: d.error }; updatePanel(); return; }
+    const r = d.result;
+    app.fem = { result: r, key: app.fem.key, showVm: true };
+    // L'ajustement de Gibson-Ashby remplace la loi generique pour cette surface.
+    state.gaFits = { ...(state.gaFits || {}), [`${state.type}|${state.mode}`]: { C: r.fit.C, n: r.fit.n } };
+    if (app.metrics) {
+      const mat = materialOf(state);
+      app.metrics.E = r.fit.C * mat.E * Math.pow(Math.max(0, 1 - app.metrics.porosity), r.fit.n);
+    }
+    colorVm();
+    updatePanel();
+    status(`${t('Éléments finis terminés en')} ${(r.timeMs / 1000).toLocaleString('fr-FR', { maximumFractionDigits: 1 })} s`);
+    saveSession();
+  };
+  femWorker.postMessage({ id, params: geoParams(), n: 24 });
+  updatePanel();
+}
+function updateFemStage() {
+  const el = document.querySelector('#g-fem .hint');
+  if (el) el.innerHTML = `<span class="spinner inline"></span> ${t(app.fem.stage)} ${app.fem.detail || ''}`;
+}
+// Couleur de von Mises sur la surface : position du sommet ramenee dans la cellule periodique.
+function colorVm() {
+  if (!app.mesh || !app.fem || !app.fem.result) return;
+  const r = app.fem.result;
+  const g = app.mesh.geometry;
+  const pos = g.attributes.position.array, col = g.attributes.color.array;
+  const [nx, ny, nz] = r.dims;
+  const [X, Y, Z] = specimenBox(state.shape);
+  const cx = X / 2, cy = Y / 2, cz = Z / 2;
+  const R = rotationMatrix(state.rotation);
+  const size = r.size;
+  const wrap = (v, n) => ((v % n) + n) % n;
+  for (let v = 0; v < pos.length / 3; v++) {
+    const u = pos[v * 3] - cx, w = pos[v * 3 + 1] - cy, q = pos[v * 3 + 2] - cz;
+    const a = R[0] * u + R[3] * w + R[6] * q + cx, b = R[1] * u + R[4] * w + R[7] * q + cy, c = R[2] * u + R[5] * w + R[8] * q + cz;
+    const fx = (a / size[0]) * nx - 0.5, fy = (b / size[1]) * ny - 0.5, fz = (c / size[2]) * nz - 0.5;
+    const i0 = Math.floor(fx), j0 = Math.floor(fy), k0 = Math.floor(fz);
+    let m = 0;
+    for (let dk = 0; dk < 2; dk++) for (let dj = 0; dj < 2; dj++) for (let di = 0; di < 2; di++) {
+      const val = r.vmGrid[wrap(i0 + di, nx) + wrap(j0 + dj, ny) * nx + wrap(k0 + dk, nz) * nx * ny];
+      if (val > m) m = val;
+    }
+    const rgb = turbo(m / r.kt99);
+    col[v * 3] = rgb[0]; col[v * 3 + 1] = rgb[1]; col[v * 3 + 2] = rgb[2];
+  }
+  g.attributes.color.needsUpdate = true;
+  applyLook();
+  showLegend();
+}
+document.getElementById('metrics').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-act]');
+  if (!b) return;
+  if (b.dataset.act === 'fem') runFem();
+  else if (b.dataset.act === 'vm' && app.fem) {
+    app.fem.showVm = !app.fem.showVm;
+    if (app.fem.showVm) colorVm(); else { if (state.flow.wss && app.flow) computeWss(); applyLook(); showLegend(); }
+    updatePanel();
+  }
 });
 
 // ---------- Historique et projet ----------
