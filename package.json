@@ -1,6 +1,6 @@
 {
   "name": "scaffold-studio",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "Conception et simulation de scaffolds poreux pour l'ingenierie tissulaire osseuse",
   "scripts": {
     "dev": "vite",

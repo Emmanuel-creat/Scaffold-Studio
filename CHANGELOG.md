@@ -1,5 +1,18 @@
 # Journal des versions
 
+## 1.3.0 (novembre 2026)
+
+Troisième vague : analyses, fabrication et exports.
+
+- Histogrammes des pores et des struts, écart type.
+- Diamètre de passage (percolation), tortuosité géométrique et hydraulique, porosimétrie simulée.
+- Profil de porosité selon la hauteur, volumes de vide fermés et îlots solides détachés.
+- Cartes de surface : épaisseur locale, taille de pore locale, courbure moyenne, surplombs.
+- Comparaison d'une version figée avec la version courante.
+- Aperçu des couches d'impression, plateau de fabrication, temps et coût estimés.
+- Exports 3MF, VTK surface avec cartes, Abaqus (maillage voxel et essai de compression), champ de vitesse VTK.
+- Rapport de conception HTML imprimable avec méthodes et références.
+
 ## 1.2.0 (novembre 2026)
 
 Deuxième vague : mécanique.

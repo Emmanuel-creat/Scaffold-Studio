@@ -1,10 +1,11 @@
 // Panneau des mesures, avec les plages de reference de l'os.
 import { materialOf, PROCESSES, BONE } from './metrics.js';
-import { specimenBox } from './tpms.js';
+import { specimenBox, SURFACES } from './tpms.js';
 import { MU } from './flow.js';
 import { t } from './i18n.js';
 import { compressionCurve, fatigue, buckling, degradation, gradedModulus } from './mechanics.js';
-import { lineChart } from './charts.js';
+import { lineChart, barChart } from './charts.js';
+import { buildEstimate } from './fabrication.js';
 import { fmt, pct, sci, scalePos } from './format.js';
 
 function scale(value, lo, hi, log, bands, labels) {
@@ -42,7 +43,8 @@ const TIPS = {
   wss: 'τ = μ · |u(d)| / d, vitesse prise à une distance d de la paroi',
 };
 
-export function renderMetrics(root, state, m, flowStatus, flow, wss, tensor, fem) {
+export function renderMetrics(root, state, app) {
+  const { metrics: m, flowStatus, flow, wss, tensor, fem } = app;
   if (!m) { root.innerHTML = `<div class="m-group"><h3>${t('Mesures')}</h3><p class="hint">${t('Calcul en cours…')}</p></div>`; return; }
   const mat = materialOf(state);
   const proc = PROCESSES[state.process];
@@ -90,10 +92,14 @@ export function renderMetrics(root, state, m, flowStatus, flow, wss, tensor, fem
     perf += `<div class="tensor" title="${t('Perméabilité diagonale calculée avec la force motrice selon chaque axe')}">${v}</div>`
       + (Number.isFinite(ratio) ? `<span class="hint">${t('Anisotropie')} kmax / kmin = ${fmt(ratio, 2)}</span>` : '');
   }
+  if (flow && Number.isFinite(flow.tortuosity)) perf += metric(t('Tortuosité hydraulique'), fmt(flow.tortuosity, 2), '', '', t('Koponen : τ = Σ|u| / Σ uz'));
   const capped = m.capped ? `<p class="flag ko">${t('Résolution réduite à')} ${m.res} ${t('pour tenir en mémoire')}</p>` : '';
 
   root.innerHTML = `
-    <div class="m-group"><h3>${t('Morphologie')}</h3>${capped}${morph}${KEY}</div>
+    ${compare(state, app)}
+    <div class="m-group"><h3>${t('Morphologie')}</h3>${capped}${morph}${KEY}${histos(m)}</div>
+    ${analysisGroup(state, m, app.analysis)}
+    ${fabrication(state, m)}
     <div class="m-group"><h3>${t('Mécanique')} · ${t(mat.label)}</h3>${meca}</div>
     ${advanced(state, m, fem)}
     ${resorption(state, m, fem)}
@@ -178,5 +184,95 @@ function resorption(state, m, fem) {
     ${metric(t('Module à 6 mois'), e6 < 1 ? fmt(e6 * 1000, 0) : fmt(e6, 2), e6 < 1 ? ' MPa' : ' GPa')}
     <span class="flag ${ok ? 'ok' : 'ko'}">${ok ? t('Rigidité maintenue pendant la consolidation') : t('Rigidité sous l\'os spongieux avant 6 mois')}</span>
     <p class="hint">${d.kind === 'surface' ? t('Érosion de surface appliquée à la transformée de distance du solide') : t('Hydrolyse en masse')} · ${t(d.ref)}</p>
+  </div>`;
+}
+
+// Histogrammes des diametres de pore et des epaisseurs de strut (point 21).
+function histos(m) {
+  const h = (st, cls) => {
+    if (!st.hist) return '';
+    const n = st.hist.counts.length, w = st.hist.max / n;
+    return barChart({ bins: st.hist.counts.map((c, i) => [(i + 0.5) * w * 1000, c]), cls, xlabel: 'µm' });
+  };
+  return `<details class="sub"><summary>${t('Distributions')}</summary>
+    <div class="chart-title">${t('Diamètre de pore')} · ${t('écart type')} ${fmt(m.pore.sd * 1000, 0)} µm</div>${h(m.pore, 'acc')}
+    <div class="chart-title">${t('Épaisseur de strut')} · ${t('écart type')} ${fmt(m.strut.sd * 1000, 0)} µm</div>${h(m.strut, 'bone')}
+  </details>`;
+}
+
+// Analyses avancees calculees apres le maillage.
+function analysisGroup(state, m, a) {
+  if (!a) return `<div class="m-group"><h3>${t('Analyses avancées')}</h3><p class="hint"><span class="spinner inline"></span> ${t('Calcul en cours…')}</p></div>`;
+  const prof = a.profile.z.map((z, i) => [z, a.profile.porosity[i] * 100]);
+  const intr = a.intrusion.map((p) => [p.D * 1000, p.fraction * 100]);
+  return `<div class="m-group"><h3>${t('Analyses avancées')}</h3>
+    ${metric(t('Diamètre de passage'), fmt(a.percolation * 1000, 0), ' µm', '', t('Plus grosse sphère qui traverse la pièce de bas en haut : fenêtre limitante pour la migration cellulaire'))}
+    ${a.tortuosity ? metric(t('Tortuosité géométrique'), fmt(a.tortuosity, 2), '', '', t('Plus court chemin dans les pores de la base au sommet, rapporté à la hauteur')) : ''}
+    ${metric(t('Surface concave'), pct(a.concaveFraction, 0), ' %', '', t('Part de la surface à courbure moyenne négative, où le tissu se dépose en premier'))}
+    ${metric(t('Surface en surplomb'), pct(a.overhangFraction, 1), ' %', '', t('Faces tournées vers le bas, plus inclinées que l\'angle limite du procédé'))}
+    <div class="kv">
+      <span>${t('Volumes de vide fermés')}</span><b>${a.closed.closedCount}${a.closed.closedCount ? ` · ${fmt(a.closed.closedVol, 3)} mm³` : ''}</b>
+      <span>${t('Îlots solides détachés')}</span><b>${a.closed.islands}${a.closed.islands ? ` · ${fmt(a.closed.islandVol, 3)} mm³` : ''}</b>
+    </div>
+    ${a.closed.closedCount || a.closed.islands ? `<span class="flag ko">${t('Poudre piégée ou pièces flottantes à vérifier')}</span>` : `<span class="flag ok">${t('Aucun volume fermé ni îlot détaché')}</span>`}
+    <details class="sub"><summary>${t('Porosimétrie simulée')}</summary>
+      <div class="chart-box">${lineChart({ series: [{ pts: intr, cls: 'acc' }, { pts: intr, dots: true, cls: 'acc' }], xlabel: t('diamètre de la sonde (µm)'), ylabel: t('% du vide atteint'), xlog: true, ymin: 0, ymax: 100 })}</div>
+      <p class="hint">${t('Volume des pores atteint depuis l\'extérieur par une sphère de diamètre donné, comme une intrusion de mercure.')}</p>
+    </details>
+    <details class="sub"><summary>${t('Profil de porosité selon la hauteur')}</summary>
+      <div class="chart-box">${lineChart({ series: [{ pts: prof, cls: 'acc' }], xlabel: 'z (mm)', ylabel: t('porosité (%)'), ymin: 0, ymax: 100 })}</div>
+    </details>
+  </div>`;
+}
+
+// Fabrication : couches, temps et cout.
+function fabrication(state, m) {
+  const b = buildEstimate(state, m);
+  const h = (v) => (v < 1 ? `${fmt(v * 60, 0)} min` : `${fmt(v, 1)} h`);
+  return `<div class="m-group"><h3>${t('Fabrication')}</h3>
+    <div class="kv">
+      <span>${t('Couches')}</span><b>${b.layers.toLocaleString('fr-FR')} × ${fmt(b.layer * 1000, 0)} µm</b>
+      <span>${t('Temps pour une pièce')}</span><b>${h(b.hoursOne)}</b>
+      <span>${t('Pièces par plateau')}</span><b>${b.perPlate} (${b.perRow} × ${b.perCol})</b>
+      <span>${t('Temps du plateau plein')}</span><b>${h(b.hoursPlate)}</b>
+      <span>${t('Coût matière')}</span><b>${fmt(b.materialCost, 2)} €</b>
+      <span>${t('Coût d\'une pièce seule')}</span><b>${fmt(b.costOne, 0)} €</b>
+      <span>${t('Coût par pièce, plateau plein')}</span><b>${fmt(b.costPlate, 1)} €</b>
+    </div>
+    <p class="hint">${t('Devis préliminaire : temps de recouvrement et vitesse de balayage typiques du procédé, hors post-traitement et supports.')}</p>
+  </div>`;
+}
+
+// Comparaison avec une version figee (point 26).
+const CMP = [
+  ['porosity', 'Porosité', (m) => m.porosity * 100, '%', 1],
+  ['pore', 'Pore moyen', (m) => m.pore.mean * 1000, 'µm', 0],
+  ['strut', 'Strut moyen', (m) => m.strut.mean * 1000, 'µm', 0],
+  ['ss', 'Surface spécifique', (m) => m.specificSurface, 'mm⁻¹', 2],
+  ['E', 'Module de Young', (m) => m.E, 'GPa', 2],
+  ['sy', 'Limite d\'élasticité', (m) => m.sy, 'MPa', 1],
+  ['mass', 'Masse', (m) => m.mass, 'g', 3],
+];
+export function snapshotForCompare(state, app) {
+  const m = app.metrics;
+  const row = Object.fromEntries(CMP.map(([k, , f]) => [k, f(m)]));
+  row.k = app.flowStatus.permeability || null;
+  row.label = `${t(SURFACES[state.type].label)} ${Math.round(state.porosity * 100)} %, ${state.cell} mm, ${t(materialOf(state).label)}`;
+  return row;
+}
+function compare(state, app) {
+  const ref = app.ref;
+  if (!ref) return `<div class="m-group compact"><button class="btn wide" data-act="ref">${t('Figer cette version pour comparer')}</button></div>`;
+  const cur = snapshotForCompare(state, app);
+  const rows = CMP.map(([k, lab, , unit, d]) => {
+    const a = ref[k], b = cur[k];
+    const dp = a ? ((b - a) / Math.abs(a)) * 100 : 0;
+    return `<tr><td>${t(lab)}</td><td>${fmt(a, d)}</td><td>${fmt(b, d)}</td><td class="${Math.abs(dp) < 0.5 ? '' : dp > 0 ? 'up' : 'down'}">${dp > 0 ? '+' : ''}${fmt(dp, 0)} %</td></tr>`;
+  });
+  if (ref.k && cur.k) rows.push(`<tr><td>${t('Perméabilité')}</td><td>${sci(ref.k, 1)}</td><td>${sci(cur.k, 1)}</td><td>× ${fmt(cur.k / ref.k, 2)}</td></tr>`);
+  return `<div class="m-group"><h3>${t('Comparaison')}</h3>
+    <table class="cmp"><thead><tr><th></th><th>A</th><th>${t('Actuel')}</th><th>Δ</th></tr></thead><tbody>${rows.join('')}</tbody></table>
+    <p class="hint">A : ${ref.label}</p>
+    <div class="row2"><button class="btn" data-act="ref">${t('Figer l\'actuel')}</button><button class="btn" data-act="unref">${t('Effacer A')}</button></div>
   </div>`;
 }

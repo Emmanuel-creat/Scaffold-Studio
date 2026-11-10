@@ -29,15 +29,18 @@ Ces compromis se calculent d'habitude dans plusieurs logiciels lourds (CAO, mail
 | Design inverse | Porosité calculée pour obtenir une épaisseur de strut visée ou une rigidité visée |
 | Morphologie | Porosité mesurée, diamètre de pore et épaisseur de strut par sphère inscrite, surface spécifique, interconnectivité |
 | Mécanique | Module de Young et limite d'élasticité estimés (Gibson-Ashby) pour 10 matériaux et un matériau personnalisé, comparés aux plages de l'os, masse |
+| Analyses avancées | Histogrammes des pores et des struts, diamètre de passage (percolation), tortuosité géométrique et hydraulique, porosimétrie simulée, profil de porosité selon la hauteur, volumes fermés et îlots détachés, part de surface concave |
+| Cartes de surface | Épaisseur locale, taille de pore locale, courbure moyenne, surplombs à l'impression, cisaillement, von Mises |
+| Comparaison | Version figée A comparée à la version courante, écarts en pourcentage |
 | Éléments finis | Homogénéisation périodique de la cellule par éléments finis voxel : tenseur de rigidité, modules Ex, Ey, Ez, cisaillement, anisotropie de Zener, carte de von Mises sur la surface, concentration de contrainte, loi de Gibson-Ashby ajustée pour la surface choisie, module d'une éprouvette à gradient |
 | Essais simulés | Courbe de compression modèle avec grandeurs de la norme ISO 13314 (plateau, densification, énergie absorbée), endurance en fatigue, élancement et flambement des struts |
 | Résorption | Évolution de la masse et de la rigidité sur 36 mois pour le magnésium, le zinc, le β-TCP, le PCL et le PLA |
-| Fabrication | Vérification de l'épaisseur minimale selon le procédé, lissage de Taubin sans perte de volume |
+| Fabrication | Vérification de l'épaisseur minimale selon le procédé, lissage de Taubin, aperçu des couches d'impression, surplombs, plateau de fabrication avec le nombre de pièces, temps et coût estimés |
 | Perfusion | Boltzmann sur réseau D3Q19 à collision TRT, perméabilité de Darcy, tenseur de perméabilité selon X, Y et Z, perte de charge, particules traçantes |
 | Cisaillement | Carte de cisaillement pariétal et part de la surface dans la fenêtre cible |
 | Visualisation | Coupe selon X, Y ou Z, transparence, rotation, mode vol à travers les pores |
 | Projet | Annuler et rétablir, enregistrement et ouverture d'un projet, lien partageable, aperçu rapide puis résolution finale, interface en français ou en anglais |
-| Exports | STL (millimètres), rapport CSV, capture PNG, vidéo MP4 quand le navigateur le permet, sinon WebM |
+| Exports | STL et 3MF pour l'impression, VTK surface avec les cartes (ParaView), maillage voxel Abaqus avec essai de compression, champ de vitesse VTK, mesures CSV, rapport de conception HTML imprimable en PDF, capture PNG, vidéo MP4 ou WebM |
 
 ![Carte de cisaillement en coupe](docs/captures/02-cisaillement-coupe.png)
 
@@ -125,6 +128,7 @@ Tests automatiques :
 | Éléments finis sur bloc plein | tenseur isotrope retrouvé à 10⁻⁶ près |
 | Éléments finis sur stratifié de plaques | module égal à la fraction solide (borne de Voigt exacte) |
 | Ajustement de Gibson-Ashby | coefficients retrouvés sur une loi puissance connue |
+| Analyses | profil de porosité, absence de volume fermé sur un gyroïde, tortuosité, passage plus petit que le pore moyen, épaisseur locale cohérente avec le strut |
 | Volume du maillage par rapport à la porosité visée | écart inférieur à 3 points sur les 10 combinaisons surface et mode |
 | Transformée de distance | distances exactes sur un cas de référence |
 | Interconnectivité d'un gyroïde | 100 % |
@@ -149,6 +153,10 @@ src/
   fem.worker.js    calcul éléments finis hors du fil principal
   mechanics.js     compression, fatigue, flambement, résorption
   charts.js        graphiques SVG du panneau
+  analysis.js      percolation, tortuosité, porosimétrie, volumes fermés, cartes de surface
+  fabrication.js   couches, temps, plateau, coût
+  exporters.js     3MF, VTK, Abaqus, champ de vitesse
+  report.js        rapport de conception HTML
   project.js       projet, lien partageable, historique
   i18n.js          traduction français et anglais
 tests/             tests unitaires (Vitest)

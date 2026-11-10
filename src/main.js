@@ -4,12 +4,15 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 import { STLExporter } from 'three/examples/jsm/exporters/STLExporter.js';
 import { PRESETS, applyPreset } from './presets.js';
 import { buildControls } from './ui.js';
-import { renderMetrics, pressureDrop } from './panel.js';
+import { renderMetrics, pressureDrop, snapshotForCompare } from './panel.js';
 import { FlowField, Particles, wallShear, flyPath, WSS_RANGE } from './flow.js';
-import { specimenBox, SURFACES, fitWholeCells, gridSize, rotationMatrix } from './tpms.js';
-import { materialOf, porosityForE } from './metrics.js';
+import { specimenBox, SURFACES, fitWholeCells, gridSize, rotationMatrix, makeFieldFn } from './tpms.js';
+import { buildEstimate } from './fabrication.js';
+import { materialOf, porosityForE, PROCESSES } from './metrics.js';
 import { parseSTL, normalize, stlToSdf } from './stl.js';
 import { compressionCurve, fatigue } from './mechanics.js';
+import { to3MF, toVTKSurface, toVTKVelocity } from './exporters.js';
+import { buildReport } from './report.js';
 import { History, serialize, deserialize, encodeHash, decodeHash } from './project.js';
 import { t, getLang, setLang, translatePage } from './i18n.js';
 import { turbo } from './format.js';
@@ -87,7 +90,7 @@ const backMat = new THREE.MeshStandardMaterial({ side: THREE.BackSide, color: 0x
 
 function applyLook() {
   const look = LOOKS[state.material] || LOOKS.custom;
-  const wss = (state.flow.wss && app.wss) || (app.fem && app.fem.showVm && app.fem.result);
+  const wss = app.colorMode && app.colorMode !== 'none';
   frontMat.vertexColors = !!wss;
   frontMat.color.set(wss ? 0xffffff : look.color);
   frontMat.metalness = wss ? 0 : look.metalness;
@@ -150,6 +153,12 @@ function onGeoMessage(e) {
   const d = e.data;
   if (d.id !== geoId) return;
   if (d.stage) { busy(true, t(d.stage)); return; }
+  if (d.analysis) {
+    app.analysis = d.analysis; app.maps = d.maps;
+    refreshColors();
+    updatePanel();
+    return;
+  }
   if (d.cmd === 'inverseStrut') {
     geoBusy = false; busy(false);
     beforeChange();
@@ -163,8 +172,9 @@ function onGeoMessage(e) {
   setMesh(d.mesh);
   app.metrics = d.metrics;
   app.wss = null;
-  if (app.fem && app.fem.showVm && app.fem.key === femKey()) colorVm();
-  applyLook();
+  app.analysis = null; app.maps = null;
+  refreshColors();
+  drawPlate(); drawLayer();
   updatePanel();
   updateDims();
   frameCamera(firstGeo);
@@ -224,7 +234,7 @@ function stopFlow(clear) {
     app.flow = null; app.wss = null; app.flowStatus = { state: 'idle' };
     if (app.particles) { root.remove(app.particles.object); app.particles.dispose(); app.particles = null; }
     if (app.fly) exitFly();
-    document.getElementById('hud-legend').hidden = true;
+    if (app.colorMode === 'wss') refreshColors();
   }
   ctl && (ctl.flowBtn.innerHTML = `<svg><use href="#i-play"/></svg> ${t('Lancer la perfusion')}`);
   updatePanel();
@@ -268,9 +278,46 @@ function computeWss() {
   const g = app.mesh.geometry;
   const res = wallShear(g.attributes.position.array, g.attributes.normal.array, app.flow, state.flow.wssLow, state.flow.wssHigh);
   if (app.fem) app.fem.showVm = false;
-  g.attributes.color.array.set(res.colors);
-  g.attributes.color.needsUpdate = true;
   app.wss = res;
+  refreshColors();
+}
+
+// Couleurs de la surface : von Mises, puis cisaillement, puis carte geometrique choisie.
+const diverge = (x) => {
+  const t = Math.min(1, Math.max(-1, x));
+  const a = [0.23, 0.36, 0.78], w = [0.93, 0.93, 0.93], b = [0.80, 0.18, 0.18];
+  const [c0, c1, f] = t < 0 ? [w, a, -t] : [w, b, t];
+  return [c0[0] + (c1[0] - c0[0]) * f, c0[1] + (c1[1] - c0[1]) * f, c0[2] + (c1[2] - c0[2]) * f];
+};
+const MAP_INFO = {
+  thickness: { label: 'Épaisseur locale (µm)', max: () => app.metrics.strut.p95 * 1.25 },
+  pore: { label: 'Taille de pore locale (µm)', max: () => app.metrics.pore.p95 * 1.25 },
+  curvature: { label: 'Courbure moyenne (mm⁻¹)', max: () => (app.analysis ? app.analysis.curvatureScale : 1) },
+  overhang: { label: 'Surplombs', max: () => 1 },
+};
+function refreshColors() {
+  if (!app.mesh) return;
+  const g = app.mesh.geometry;
+  const col = g.attributes.color.array;
+  let mode = 'none';
+  if (app.fem && app.fem.showVm && app.fem.result && app.fem.key === femKey()) mode = 'vm';
+  else if (state.flow.wss && app.wss) mode = 'wss';
+  else if (state.view.map && state.view.map !== 'none' && app.maps) mode = state.view.map;
+  app.colorMode = mode;
+  if (mode === 'vm') colorVm();
+  else if (mode === 'wss') col.set(app.wss.colors);
+  else if (mode !== 'none') {
+    const vals = app.maps[mode];
+    const max = MAP_INFO[mode].max();
+    for (let v = 0; v < vals.length; v++) {
+      let rgb;
+      if (mode === 'curvature') rgb = diverge(vals[v] / max);
+      else if (mode === 'overhang') rgb = vals[v] >= 1 ? [0.86, 0.2, 0.22] : [0.78 + vals[v] * 0.25, 0.8 - vals[v] * 0.2, 0.82 - vals[v] * 0.6];
+      else rgb = turbo(vals[v] / max);
+      col[v * 3] = rgb[0]; col[v * 3 + 1] = rgb[1]; col[v * 3 + 2] = rgb[2];
+    }
+  }
+  g.attributes.color.needsUpdate = true;
   applyLook();
   showLegend();
 }
@@ -278,14 +325,33 @@ function computeWss() {
 function showLegend() {
   const el = document.getElementById('hud-legend');
   const stops = Array.from({ length: 11 }, (_, i) => { const c = turbo(i / 10).map((v) => Math.round(v * 255)); return `rgb(${c}) ${i * 10}%`; });
-  if (app.fem && app.fem.showVm && app.fem.result) {
+  if (app.colorMode === 'vm') {
     const top = app.fem.result.kt99;
     const ticks = Array.from({ length: 5 }, (_, i) => ((top * i) / 4).toLocaleString('fr-FR', { maximumFractionDigits: 1 }));
     el.innerHTML = `<div>${t('Von Mises / contrainte appliquée')}</div><div class="colorbar" style="background:linear-gradient(90deg,${stops.join(',')})"></div><div class="scale-legend">${ticks.map((x) => `<span>${x}</span>`).join('')}</div>`;
     el.hidden = false;
     return;
   }
-  if (!state.flow.wss || !app.wss) { el.hidden = true; return; }
+  const mode = app.colorMode;
+  if (mode && MAP_INFO[mode] && app.metrics) {
+    const max = MAP_INFO[mode].max();
+    let bar, ticks;
+    if (mode === 'curvature') {
+      bar = Array.from({ length: 11 }, (_, i) => `rgb(${diverge(i / 5 - 1).map((v) => Math.round(v * 255))}) ${i * 10}%`).join(',');
+      ticks = [-max, -max / 2, 0, max / 2, max].map((v) => v.toLocaleString('fr-FR', { maximumFractionDigits: 1 }));
+    } else if (mode === 'overhang') {
+      bar = 'rgb(199,204,209) 0%, rgb(230,190,110) 70%, rgb(219,51,56) 71%, rgb(219,51,56) 100%';
+      ticks = ['0°', '', `${PROCESSES[state.process].overhang}°`, '', '90°'];
+    } else {
+      bar = stops.join(',');
+      ticks = Array.from({ length: 5 }, (_, i) => Math.round((max * 1000 * i) / 4).toLocaleString('fr-FR'));
+    }
+    const extra = mode === 'curvature' ? `<div class="scale-legend"><span>${t('concave')}</span><span>${t('convexe')}</span></div>` : '';
+    el.innerHTML = `<div>${t(MAP_INFO[mode].label)}</div><div class="colorbar" style="background:linear-gradient(90deg,${bar})"></div><div class="scale-legend">${ticks.map((x) => `<span>${x}</span>`).join('')}</div>${extra}`;
+    el.hidden = false;
+    return;
+  }
+  if (mode !== 'wss') { el.hidden = true; return; }
   const ticks = Array.from({ length: 5 }, (_, i) => {
     const v = 10 ** (WSS_RANGE[0] + (i * (WSS_RANGE[1] - WSS_RANGE[0])) / 4) * 1000;
     return Number(v.toPrecision(v < 1 ? 1 : 2)).toLocaleString('fr-FR');
@@ -295,9 +361,85 @@ function showLegend() {
 }
 
 // ---------- Vue ----------
+// Apercu des couches d'impression : section 2D a la hauteur choisie (point 52).
+const layerHud = document.getElementById('hud-layer');
+const layerCanvas = document.getElementById('layer-canvas');
+let layerFn = null, layerKey = '';
+function drawLayer() {
+  if (!state.view.layers) { layerHud.hidden = true; return; }
+  layerHud.hidden = false;
+  const key = JSON.stringify(History.snap({ ...state, view: null, flow: null }));
+  if (key !== layerKey) { layerFn = makeFieldFn(state); layerKey = key; }
+  const [X, Y, Z] = specimenBox(state.shape);
+  const proc = PROCESSES[state.process];
+  const N = Math.ceil(Z / proc.layer);
+  const n = Math.max(1, Math.min(N, Math.round((Math.min(state.view.cut, 100) / 100) * N)));
+  const z = Math.min(Z - 1e-4, (n - 0.5) * proc.layer);
+  const W = layerCanvas.width, H = layerCanvas.height;
+  const s = Math.max(X, Y) / Math.min(W, H);
+  const ox = (X - W * s) / 2, oy = (Y - H * s) / 2;
+  const ctx = layerCanvas.getContext('2d');
+  const img = ctx.createImageData(W, H);
+  let solid = 0, inside = 0;
+  for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) {
+    const x = ox + (i + 0.5) * s, y = oy + (H - 1 - j + 0.5) * s;
+    const o = (j * W + i) * 4;
+    const d = layerFn.sdf(x, y, z);
+    let c;
+    if (d > 0) c = [11, 14, 19];
+    else {
+      inside++;
+      const v = layerFn.value(x, y, z);
+      if (v < 0) { solid++; c = [233, 223, 200]; } else c = [24, 32, 44];
+    }
+    img.data[o] = c[0]; img.data[o + 1] = c[1]; img.data[o + 2] = c[2]; img.data[o + 3] = 255;
+  }
+  ctx.putImageData(img, 0, 0);
+  document.getElementById('layer-text').textContent = `${t('Couche')} ${n.toLocaleString('fr-FR')} / ${N.toLocaleString('fr-FR')} · z ${z.toFixed(2)} mm · ${t('solide')} ${inside ? Math.round((solid / inside) * 100) : 0} %`;
+}
+
+// Plateau de fabrication avec les autres pieces du lot (point 60).
+const plateGroup = new THREE.Group();
+scene.add(plateGroup);
+function drawPlate() {
+  plateGroup.clear();
+  plateGroup.visible = !!state.view.plate && !app.fly;
+  if (!state.view.plate || !app.metrics) return;
+  const b = buildEstimate(state, app.metrics);
+  const [X, Y, Z] = specimenBox(state.shape);
+  const [W, D] = b.plate;
+  // La piece reelle occupe la case centrale du lot.
+  const ic = Math.floor(b.perRow / 2), jc = Math.floor(b.perCol / 2);
+  const tx = (i) => (i - ic) * (X + b.gap), ty = (j) => (j - jc) * (Y + b.gap);
+  const cx = (tx(0) + tx(b.perRow - 1) + X) / 2, cy = (ty(0) + ty(b.perCol - 1) + Y) / 2;
+  const plate = new THREE.Mesh(new THREE.BoxGeometry(W, D, 1.5), new THREE.MeshStandardMaterial({ color: 0x5b6470, metalness: 0.7, roughness: 0.45 }));
+  plate.position.set(cx, cy, -0.78);
+  app.plateCenter = [cx, cy];
+  plateGroup.add(plate);
+  const grid = new THREE.GridHelper(Math.max(W, D), Math.round(Math.max(W, D) / 10), 0x8a95a5, 0x3a4350);
+  grid.rotation.x = Math.PI / 2;
+  grid.position.set(cx, cy, 0.01);
+  plateGroup.add(grid);
+  const count = b.perPlate - 1;
+  if (count > 0) {
+    const ghost = new THREE.InstancedMesh(new THREE.BoxGeometry(X, Y, Z), new THREE.MeshStandardMaterial({ color: LOOKS[state.material]?.color || 0xaaaaaa, transparent: true, opacity: 0.3, roughness: 0.6 }), count);
+    const mtx = new THREE.Matrix4();
+    let q = 0;
+    for (let j = 0; j < b.perCol; j++) for (let i = 0; i < b.perRow; i++) {
+      if (i === ic && j === jc) continue;
+      mtx.makeTranslation(tx(i) + X / 2, ty(j) + Y / 2, Z / 2);
+      ghost.setMatrixAt(q++, mtx);
+    }
+    plateGroup.add(ghost);
+  }
+}
+
 function applyView() {
   applyLook();
+  drawLayer();
+  drawPlate();
   const box = specimenBox(state.shape);
+  if (state.view.layers && state.view.cutAxis !== 'z') { state.view.cutAxis = 'z'; ctl && ctl.refresh(); }
   const ax = AXES[state.view.cutAxis || 'x'];
   clip.normal.set(ax === 0 ? -1 : 0, ax === 1 ? -1 : 0, ax === 2 ? -1 : 0);
   clip.constant = state.view.cut >= 100 ? 1e6 : (state.view.cut / 100) * box[ax];
@@ -315,8 +457,8 @@ function updateDims() {
 }
 
 function updatePanel() {
-  if (app.fem && app.fem.key && app.fem.key !== femKey()) { app.fem = null; applyLook(); showLegend(); }
-  renderMetrics(document.getElementById('metrics'), state, app.metrics, app.flowStatus, app.flow, app.wss, app.tensor, app.fem);
+  if (app.fem && app.fem.key && app.fem.key !== femKey()) { app.fem = null; refreshColors(); }
+  renderMetrics(document.getElementById('metrics'), state, app);
   const p = document.getElementById('flow-progress');
   if (p) p.style.width = app.flowStatus.state === 'idle' ? '0%' : `${Math.min(100, ((app.flowStatus.steps || 0) / 3000) * 100)}%`;
   if (p && ['converged', 'max'].includes(app.flowStatus.state)) p.style.width = '100%';
@@ -389,12 +531,55 @@ function download(blob, name) {
 function baseName() {
   return `scaffold_${state.type}_${state.mode}_${Math.round(state.porosity * 100)}pc_${String(state.cell).replace('.', '-')}mm`;
 }
-document.getElementById('btn-stl').onclick = () => {
+function exportStl() {
   if (!app.mesh) return;
   const data = new STLExporter().parse(new THREE.Mesh(app.mesh.geometry), { binary: true });
   download(new Blob([data], { type: 'model/stl' }), `${baseName()}.stl`);
-};
+}
+function meshArrays() {
+  const g = app.mesh.geometry;
+  return { positions: g.attributes.position.array, indices: g.index.array, normals: g.attributes.normal.array };
+}
+const exportMenu = document.getElementById('export-menu');
+const exportBtn = document.getElementById('btn-export');
+exportBtn.onclick = (e) => { e.stopPropagation(); exportMenu.hidden = !exportMenu.hidden; exportBtn.setAttribute('aria-expanded', String(!exportMenu.hidden)); };
+document.addEventListener('click', () => { exportMenu.hidden = true; exportBtn.setAttribute('aria-expanded', 'false'); });
+exportMenu.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-export]');
+  if (!b || !app.mesh) return;
+  const kind = b.dataset.export;
+  if (kind === 'stl') exportStl();
+  else if (kind === '3mf') download(to3MF(meshArrays(), { name: baseName(), material: materialOf(state).label }), `${baseName()}.3mf`);
+  else if (kind === 'vtk') {
+    const f = {};
+    if (app.maps) { f.epaisseur_mm = app.maps.thickness; f.pore_mm = app.maps.pore; f.courbure_mm1 = app.maps.curvature; f.surplomb = app.maps.overhang; }
+    if (app.wss && app.wss.tau) f.cisaillement_Pa = app.wss.tau;
+    download(toVTKSurface(meshArrays(), f), `${baseName()}_surface.vtk`);
+  } else if (kind === 'inp') {
+    busy(true, t('Maillage voxel pour Abaqus'));
+    const w = new Worker(new URL('./geo.worker.js', import.meta.url), { type: 'module' });
+    w.onmessage = (ev) => {
+      const d = ev.data;
+      if (d.stage) return;
+      w.terminate(); busy(false);
+      if (!d.ok) { status(`${t('Erreur')} : ${d.error}`); return; }
+      download(new Blob([d.text], { type: 'text/plain' }), `${baseName()}.inp`);
+      status(`Abaqus : ${d.elements.toLocaleString('fr-FR')} ${t('éléments')} C3D8, ${d.nodes.toLocaleString('fr-FR')} ${t('noeuds')}`);
+    };
+    w.postMessage({ id: 1, cmd: 'abaqus', params: geoParams(), name: baseName() });
+  } else if (kind === 'vel') {
+    if (!app.flow) { status(t('Lance d\'abord la perfusion pour exporter le champ de vitesse')); return; }
+    download(toVTKVelocity(app.flow), `${baseName()}_vitesse.vtk`);
+  } else if (kind === 'csv') exportCsv();
+  exportMenu.hidden = true;
+});
 document.getElementById('btn-report').onclick = () => {
+  if (!app.metrics) return;
+  renderer.render(scene, camera);
+  const html = buildReport(state, app, canvas.toDataURL('image/jpeg', 0.9));
+  download(new Blob([html], { type: 'text/html' }), `${baseName()}_rapport.html`);
+};
+function exportCsv() {
   const m = app.metrics; if (!m) return;
   const rows = [
     ['Paramètre', 'Valeur', 'Unité'],
@@ -426,7 +611,7 @@ document.getElementById('btn-report').onclick = () => {
   ];
   const csv = rows.map((r) => r.map((v) => (typeof v === 'number' ? String(+v.toPrecision(6)).replace('.', ',') : `"${v}"`)).join(';')).join('\n');
   download(new Blob(['﻿' + csv], { type: 'text/csv' }), `${baseName()}_mesures.csv`);
-};
+}
 function snapshot() {
   renderer.render(scene, camera);
   canvas.toBlob((b) => b && download(b, `${baseName()}.png`), 'image/png');
@@ -493,7 +678,7 @@ function runFem() {
       const mat = materialOf(state);
       app.metrics.E = r.fit.C * mat.E * Math.pow(Math.max(0, 1 - app.metrics.porosity), r.fit.n);
     }
-    colorVm();
+    refreshColors();
     updatePanel();
     status(`${t('Éléments finis terminés en')} ${(r.timeMs / 1000).toLocaleString('fr-FR', { maximumFractionDigits: 1 })} s`);
     saveSession();
@@ -530,17 +715,17 @@ function colorVm() {
     const rgb = turbo(m / r.kt99);
     col[v * 3] = rgb[0]; col[v * 3 + 1] = rgb[1]; col[v * 3 + 2] = rgb[2];
   }
-  g.attributes.color.needsUpdate = true;
-  applyLook();
-  showLegend();
 }
 document.getElementById('metrics').addEventListener('click', (e) => {
   const b = e.target.closest('[data-act]');
   if (!b) return;
   if (b.dataset.act === 'fem') runFem();
+  else if (b.dataset.act === 'ref') { app.ref = snapshotForCompare(state, app); updatePanel(); }
+  else if (b.dataset.act === 'unref') { app.ref = null; updatePanel(); }
   else if (b.dataset.act === 'vm' && app.fem) {
     app.fem.showVm = !app.fem.showVm;
-    if (app.fem.showVm) colorVm(); else { if (state.flow.wss && app.flow) computeWss(); applyLook(); showLegend(); }
+    if (!app.fem.showVm && state.flow.wss && app.flow && !app.wss) computeWss();
+    refreshColors();
     updatePanel();
   }
 });
@@ -691,11 +876,18 @@ const callbacks = {
   onFlow: () => {
     if (app.flow) { app.flow.setInlet(state.flow.inlet); }
     if (app.particles && app.particles.count !== state.flow.particles && app.flow) { ensureParticles(); app.particles.setField(app.flow); }
-    if (state.flow.wss) computeWss(); else { app.wss = null; applyLook(); showLegend(); }
+    if (state.flow.wss) computeWss(); else { app.wss = null; refreshColors(); }
     updatePanel();
     saveSession();
   },
-  onView: () => { applyView(); saveSession(); },
+  onView: () => {
+    refreshColors(); applyView(); saveSession();
+    if (state.view.plate !== app.plateShown) {
+      app.plateShown = state.view.plate;
+      if (state.view.plate) { const b = buildEstimate(state, app.metrics); const r = Math.max(...b.plate); const [cx, cy] = app.plateCenter || [0, 0]; camera.position.set(cx + r * 0.35, cy - r * 0.75, r * 0.6); controls.target.set(cx, cy, 0); controls.autoRotate = false; camera.far = r * 20; camera.updateProjectionMatrix(); }
+      else frameCamera(true);
+    }
+  },
   onRunFlow,
   onAction,
   beforeChange,

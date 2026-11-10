@@ -21,6 +21,10 @@ export class FlowField {
       if (v > m) m = v;
     }
     this.maxLat = m;
+    // Tortuosite hydraulique (Koponen) : somme des normes / somme de la composante motrice.
+    let sn = 0, sz = 0;
+    for (let i = 0; i < this.uz.length; i++) { sn += Math.hypot(this.ux[i], this.uy[i], this.uz[i]); sz += this.uz[i]; }
+    this.tortuosity = sz > 0 ? sn / sz : NaN;
   }
   setInlet(v) { this.scale = this.meanLat > 0 ? v / this.meanLat : 0; }
   get maxPhys() { return this.maxLat * this.scale; }
@@ -155,7 +159,7 @@ export function wallShear(positions, normals, field, low, high) {
     }
   }
   const sorted = Float32Array.from(vals).sort();
-  return { colors, median: sorted[Math.floor(n / 2)] || 0, p90: sorted[Math.floor(n * 0.9)] || 0, inWindow: count ? inWin / count : 0 };
+  return { colors, tau: vals, median: sorted[Math.floor(n / 2)] || 0, p90: sorted[Math.floor(n * 0.9)] || 0, inWindow: count ? inWin / count : 0 };
 }
 
 // Trajectoire de vol : ligne de courant la plus longue parmi plusieurs departs.

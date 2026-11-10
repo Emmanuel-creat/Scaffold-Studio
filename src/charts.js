@@ -38,3 +38,22 @@ export function lineChart({ series, xlabel = '', ylabel = '', xlog = false, ylog
   svg += `<text class="axis" x="8" y="${(pad.t + h - pad.b) / 2}" text-anchor="middle" transform="rotate(-90 8 ${(pad.t + h - pad.b) / 2})">${ylabel}</text>`;
   return `${svg}</svg>`;
 }
+
+// Histogramme : bins = [[centre, effectif], ...]
+export function barChart({ bins, cls = 'acc', xlabel = '', w = 260, h = 90 }) {
+  const pad = { l: 8, r: 8, t: 6, b: 22 };
+  const max = Math.max(...bins.map((b) => b[1]), 1);
+  const bw = (w - pad.l - pad.r) / bins.length;
+  const xmax = bins[bins.length - 1][0] + (bins[1] ? (bins[1][0] - bins[0][0]) / 2 : 0);
+  let svg = `<svg class="chart" viewBox="0 0 ${w} ${h}" role="img" aria-label="${xlabel}">`;
+  bins.forEach(([, c], i) => {
+    const bh = (c / max) * (h - pad.t - pad.b);
+    svg += `<rect class="bar ${cls}" x="${pad.l + i * bw + 0.5}" y="${h - pad.b - bh}" width="${Math.max(bw - 1, 0.5)}" height="${bh}"/>`;
+  });
+  for (let i = 0; i <= 4; i++) {
+    const v = (xmax * i) / 4;
+    svg += `<text class="tick" x="${pad.l + ((w - pad.l - pad.r) * i) / 4}" y="${h - pad.b + 11}" text-anchor="${i === 0 ? 'start' : i === 4 ? 'end' : 'middle'}">${Math.round(v)}</text>`;
+  }
+  svg += `<text class="axis" x="${w / 2}" y="${h - 2}" text-anchor="middle">${xlabel}</text></svg>`;
+  return svg;
+}

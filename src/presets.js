@@ -10,7 +10,7 @@ export const DEFAULT = {
   process: 'lpbf', resKey: 'mid', smooth: 2,
   target: { strut: 400, E: 3 },
   gaFits: {},
-  view: { cut: 100, cutAxis: 'x', opacity: 100, autoRotate: true, particles: true },
+  view: { cut: 100, cutAxis: 'x', opacity: 100, autoRotate: true, particles: true, map: 'none', layers: false, plate: false },
   flow: { inlet: 0.5, particles: 5000, speed: 3, wss: false, wssLow: 0.1, wssHigh: 10 },
 };
 

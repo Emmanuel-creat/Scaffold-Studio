@@ -3,17 +3,17 @@ import { meshVolumeArea } from './mesher.js';
 import { specimenVolume as shapeVolume, makeFieldFn } from './tpms.js';
 
 export const MATERIALS = {
-  ti64: { label: 'Ti-6Al-4V (titane, fusion laser)', E: 110, sy: 880, rho: 4.43 },
-  tantale: { label: 'Tantale', E: 186, sy: 170, rho: 16.6 },
-  peek: { label: 'PEEK', E: 3.6, sy: 100, rho: 1.30 },
-  pcl: { label: 'PCL (polycaprolactone)', E: 0.4, sy: 16, rho: 1.145 },
-  pla: { label: 'PLA', E: 3.5, sy: 60, rho: 1.24 },
-  ha: { label: 'Hydroxyapatite dense', E: 100, sy: 400, rho: 3.16 },
-  cocr: { label: 'Cobalt-chrome (CoCrMo)', E: 210, sy: 800, rho: 8.3 },
-  mg: { label: 'Magnésium WE43 (résorbable)', E: 44, sy: 170, rho: 1.84 },
-  zn: { label: 'Zinc pur (résorbable)', E: 108, sy: 30, rho: 7.14 },
-  tcp: { label: 'β-TCP dense (résorbable)', E: 60, sy: 150, rho: 3.07 },
-  custom: { label: 'Matériau personnalisé', E: 10, sy: 100, rho: 2, custom: true },
+  ti64: { label: 'Ti-6Al-4V (titane, fusion laser)', E: 110, sy: 880, rho: 4.43, price: 300 },
+  tantale: { label: 'Tantale', E: 186, sy: 170, rho: 16.6, price: 1500 },
+  peek: { label: 'PEEK', E: 3.6, sy: 100, rho: 1.30, price: 600 },
+  pcl: { label: 'PCL (polycaprolactone)', E: 0.4, sy: 16, rho: 1.145, price: 150 },
+  pla: { label: 'PLA', E: 3.5, sy: 60, rho: 1.24, price: 25 },
+  ha: { label: 'Hydroxyapatite dense', E: 100, sy: 400, rho: 3.16, price: 400 },
+  cocr: { label: 'Cobalt-chrome (CoCrMo)', E: 210, sy: 800, rho: 8.3, price: 200 },
+  mg: { label: 'Magnésium WE43 (résorbable)', E: 44, sy: 170, rho: 1.84, price: 250 },
+  zn: { label: 'Zinc pur (résorbable)', E: 108, sy: 30, rho: 7.14, price: 80 },
+  tcp: { label: 'β-TCP dense (résorbable)', E: 60, sy: 150, rho: 3.07, price: 500 },
+  custom: { label: 'Matériau personnalisé', E: 10, sy: 100, rho: 2, custom: true, price: 100 },
 };
 
 // Materiau effectif : les valeurs saisies remplacent celles du materiau personnalise.
@@ -24,9 +24,11 @@ export function materialOf(params) {
 }
 
 export const PROCESSES = {
-  sla: { label: 'Stéréolithographie (résine)', minFeature: 0.15 },
-  lpbf: { label: 'Fusion laser sur lit de poudre (métal)', minFeature: 0.3 },
-  fdm: { label: 'Dépôt de fil fondu', minFeature: 0.4 },
+  // layer : epaisseur de couche (mm) ; recoat : temps fixe par couche (s) ; scan : aire solide traitee (mm2/s) ;
+  // machine : cout horaire (euros/h) ; plate : plateau (mm). Ordres de grandeur pour un devis preliminaire.
+  sla: { label: 'Stéréolithographie (résine)', minFeature: 0.15, overhang: 30, layer: 0.05, recoat: 6, scan: 150, machine: 15, plate: [145, 145] },
+  lpbf: { label: 'Fusion laser sur lit de poudre (métal)', minFeature: 0.3, overhang: 45, layer: 0.03, recoat: 9, scan: 90, machine: 70, plate: [250, 250] },
+  fdm: { label: 'Dépôt de fil fondu', minFeature: 0.4, overhang: 45, layer: 0.2, recoat: 1, scan: 25, machine: 4, plate: [220, 220] },
 };
 
 // Valeurs de reference pour l'os (ordres de grandeur de la litterature).
@@ -102,11 +104,16 @@ function ridgeDiameters(dt, region, field, h) {
   return out;
 }
 
-function stats(arr) {
-  if (!arr.length) return { mean: 0, p10: 0, p95: 0 };
+function stats(arr, bins = 24) {
+  if (!arr.length) return { mean: 0, p10: 0, p95: 0, sd: 0, hist: null };
   const s = Float32Array.from(arr).sort();
   const mean = arr.reduce((a, b) => a + b, 0) / arr.length;
-  return { mean, p10: s[Math.floor(0.1 * (s.length - 1))], p95: s[Math.floor(0.95 * (s.length - 1))] };
+  const sd = Math.sqrt(arr.reduce((a, b) => a + (b - mean) ** 2, 0) / arr.length);
+  // Histogramme des diametres (point 21).
+  const hi = s[Math.floor(0.995 * (s.length - 1))] * 1.05 || 1;
+  const counts = new Array(bins).fill(0);
+  for (const v of s) counts[Math.min(bins - 1, Math.floor((v / hi) * bins))]++;
+  return { mean, sd, p10: s[Math.floor(0.1 * (s.length - 1))], p95: s[Math.floor(0.95 * (s.length - 1))], hist: { max: hi, counts } };
 }
 
 // Fraction du vide relie a l'exterieur (interconnectivite), par remplissage depuis la peau.
@@ -182,6 +189,7 @@ export function computeMetrics(params, field, mesh) {
     minFeature: proc.minFeature,
     triangles: mesh.indices.length / 3,
     erosion,
+    _dt: { dtVoid, dtSolid },
   };
 }
 

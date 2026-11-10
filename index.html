@@ -30,7 +30,7 @@
 </svg>
 
 <header class="topbar">
-  <div class="brand"><svg class="logo"><use href="#i-logo"/></svg><span>Scaffold Studio</span><em id="version">v1.2</em></div>
+  <div class="brand"><svg class="logo"><use href="#i-logo"/></svg><span>Scaffold Studio</span><em id="version">v1.3</em></div>
   <div class="presets">
     <label for="preset" data-i18n>Modèle</label>
     <select id="preset"></select>
@@ -45,8 +45,18 @@
       <button id="btn-save" data-i18n-title="Enregistrer le projet (Ctrl+S)" title="Enregistrer le projet (Ctrl+S)" aria-label="Enregistrer"><svg><use href="#i-save"/></svg></button>
       <button id="btn-link" data-i18n-title="Copier un lien vers ce projet" title="Copier un lien vers ce projet" aria-label="Lien"><svg><use href="#i-link"/></svg></button>
     </div>
-    <button id="btn-stl" title="Exporter le maillage pour l'impression 3D"><svg><use href="#i-stl"/></svg><span>STL</span></button>
-    <button id="btn-report" title="Exporter les mesures (CSV)"><svg><use href="#i-report"/></svg><span data-i18n>Rapport</span></button>
+    <div class="menu">
+      <button id="btn-export" aria-haspopup="true" aria-expanded="false" data-i18n-title="Exporter" title="Exporter"><svg><use href="#i-stl"/></svg><span data-i18n>Exporter</span></button>
+      <div class="menu-list" id="export-menu" role="menu" hidden>
+        <button role="menuitem" data-export="stl"><span>STL</span><small data-i18n>Impression 3D, maillage en millimètres</small></button>
+        <button role="menuitem" data-export="3mf"><span>3MF</span><small data-i18n>Impression 3D, unités et métadonnées incluses</small></button>
+        <button role="menuitem" data-export="vtk"><span data-i18n>VTK surface</span><small data-i18n>ParaView, avec épaisseur, pore, courbure, cisaillement</small></button>
+        <button role="menuitem" data-export="inp"><span>Abaqus INP</span><small data-i18n>Maillage voxel C3D8 et essai de compression</small></button>
+        <button role="menuitem" data-export="vel"><span data-i18n>Champ de vitesse VTK</span><small data-i18n>Écoulement calculé, sur grille régulière</small></button>
+        <button role="menuitem" data-export="csv"><span data-i18n>Mesures CSV</span><small data-i18n>Tableur, séparateur point-virgule</small></button>
+      </div>
+    </div>
+    <button id="btn-report" data-i18n-title="Rapport de conception (HTML imprimable)" title="Rapport de conception (HTML imprimable)"><svg><use href="#i-report"/></svg><span data-i18n>Rapport</span></button>
     <button id="btn-photo" title="Capture d'image (P)"><svg><use href="#i-photo"/></svg><span data-i18n>Image</span></button>
     <button id="btn-rec" title="Enregistrer une vidéo (R)"><svg><use href="#i-rec"/></svg><span data-i18n>Vidéo</span></button>
     <button id="btn-fly" class="primary" title="Voler à travers les pores (F)"><svg><use href="#i-fly"/></svg><span data-i18n>Mode vol</span></button>
@@ -64,6 +74,7 @@
     <div class="hud bl" id="hud-status">Préparation…</div>
     <div class="hud center" id="hud-busy" hidden><span class="spinner"></span><span id="busy-text">Calcul de la géométrie</span></div>
     <div class="hud bc" id="hud-rec" hidden><span class="dot"></span> Enregistrement <span id="rec-time">0:00</span> · R pour arrêter</div>
+    <div class="hud br" id="hud-layer" hidden><canvas id="layer-canvas" width="200" height="200"></canvas><span id="layer-text"></span></div>
     <div class="hud fly" id="hud-fly" hidden><span id="fly-text">Vol dans les pores</span> · Échap pour sortir</div>
   </main>
   <aside class="panel right" id="metrics" aria-label="Mesures"></aside>

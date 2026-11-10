@@ -168,3 +168,24 @@ dialog button { padding: 6px 14px; border-radius: 6px; border: 1px solid var(--l
 .kv b { font: 500 12px var(--mono); text-align: right; }
 .spinner.inline { display: inline-block; width: 11px; height: 11px; vertical-align: -1px; border-width: 1.5px; }
 .btn[aria-pressed=true] { border-color: var(--accent); color: var(--accent); }
+.chart .bar.acc { fill: var(--accent); opacity: .8; }
+.chart .bar.bone { fill: var(--bone); opacity: .7; }
+details.sub > summary { cursor: pointer; color: var(--muted); font-size: 12px; padding: 2px 0; }
+details.sub[open] > summary { margin-bottom: 6px; }
+details.sub { display: flex; flex-direction: column; gap: 6px; }
+.m-group.compact { padding: 10px 14px; }
+table.cmp { width: 100%; border-collapse: collapse; font-size: 12px; }
+table.cmp th { text-align: right; color: var(--muted); font-weight: 500; font-size: 11px; padding: 2px 4px; }
+table.cmp td { padding: 3px 4px; text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; border-top: 1px solid var(--line); }
+table.cmp td:first-child { text-align: left; font-family: var(--font); color: var(--muted); }
+table.cmp td.up { color: var(--good); }
+table.cmp td.down { color: var(--warn); }
+.hud.br { bottom: 12px; right: 12px; background: rgba(13,16,22,.85); border: 1px solid var(--line); border-radius: 8px; padding: 8px; display: flex; flex-direction: column; gap: 4px; color: var(--ink); }
+.hud.br canvas { width: 200px; height: 200px; image-rendering: pixelated; border-radius: 4px; background: #0b0e13; }
+.menu { position: relative; }
+.menu-list { position: absolute; right: 0; top: calc(100% + 4px); z-index: 20; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 4px; min-width: 260px; display: flex; flex-direction: column; box-shadow: 0 10px 30px rgba(0,0,0,.4); }
+.menu-list button { background: transparent; border: 0; text-align: left; padding: 7px 10px; border-radius: 5px; cursor: pointer; display: flex; flex-direction: column; gap: 1px; }
+.menu-list button:hover, .menu-list button:focus-visible { background: var(--panel-2); }
+.menu-list button small { color: var(--muted); font-size: 11px; }
+@media (max-width: 1560px) { #btn-photo span, #btn-rec span, #btn-report span { display: none; } }
+@media (min-width: 1001px) { .topbar { flex-wrap: nowrap; } .presets { min-width: 0; } .presets select { max-width: 300px; } }

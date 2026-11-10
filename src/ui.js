@@ -177,11 +177,16 @@ export function buildControls(root, state, cb) {
       el('p', { class: 'hint' }, t('Fenêtre de cisaillement visée pour stimuler les ostéoblastes, modifiable selon ta référence.')),
     ),
     section('view', t('Affichage'), true,
+      field('surface-map', t('Carte sur la surface'), select('surface-map', 'view.map', {
+        none: t('Matériau'), thickness: t('Épaisseur locale'), pore: t('Taille de pore locale'), curvature: t('Courbure moyenne'), overhang: t('Surplombs à l\'impression'),
+      }, onView)),
       seg('cut-axis', 'view.cutAxis', { x: t('Coupe X'), y: t('Coupe Y'), z: t('Coupe Z') }, onView, t('Axe de coupe')),
       slider('cut', t('Position de coupe'), 'view.cut', { min: 0, max: 100, step: 1, unit: '%', digits: 0 }, onView, onView),
       slider('opacity', t('Opacité du scaffold'), 'view.opacity', { min: 10, max: 100, step: 1, unit: '%', digits: 0 }, onView, onView),
       check('autorot', t('Rotation automatique'), 'view.autoRotate', onView),
       check('showp', t('Afficher les particules'), 'view.particles', onView),
+      check('layers', t('Aperçu des couches d\'impression'), 'view.layers', onView),
+      check('plate', t('Plateau de fabrication'), 'view.plate', onView),
     ),
   );
 
