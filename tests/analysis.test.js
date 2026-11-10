@@ -39,6 +39,11 @@ describe('analyses avancees', () => {
     expect(med).toBeLessThan(m.strut.mean * 1.5);
     expect(mp.overhangFraction).toBeGreaterThan(0.02);
     expect(mp.overhangFraction).toBeLessThan(0.4);
+    // Le gyroide est proche d'une surface minimale : courbure de Gauss negative presque partout.
+    expect(mp.saddleFraction).toBeGreaterThan(0.75);
+    // Pores de plus de 500 µm : toute la surface borde un pore accessible.
+    expect(mp.accessibleFraction).toBeGreaterThan(0.9);
+    console.log('selle', mp.saddleFraction.toFixed(2), 'accessible', mp.accessibleFraction.toFixed(2));
     console.log('epaisseur mediane', med.toFixed(3), 'strut', m.strut.mean.toFixed(3), 'H moyen', mp.meanCurvature.toFixed(3), 'concave', mp.concaveFraction.toFixed(2));
   });
 });

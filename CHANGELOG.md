@@ -1,5 +1,17 @@
 # Journal des versions
 
+## 1.7.0 (novembre 2026)
+
+Septième vague : analyses, rendu et qualité logicielle.
+
+- Courbure de Gauss en carte sur la surface, part de surface en selle, surface accessible aux cellules.
+- Surface d'anisotropie du module de Young en 3D à côté de la pièce, rapport Emax / Emin.
+- Séquence « révélation par coupe » : le plan de coupe descend au coeur pendant que la caméra tourne.
+- Rendu vidéo image par image en MP4 60 i/s, Full HD ou 4K, sans saccade.
+- Grain de poudre partiellement fondue sur la surface en gros plan.
+- Application installable, utilisable hors ligne ; Three.js, exports et rapport chargés séparément.
+- Tests de non-régression sur des valeurs de référence, banc de performance et tests de bout en bout dans la CI.
+
 ## 1.6.0 (novembre 2026)
 
 Sixième vague : nouvelles architectures et confort d'utilisation.

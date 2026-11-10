@@ -216,7 +216,7 @@ export function vertexMaps(params, field, mesh, dt, { overhangDeg = 45 } = {}) {
   const { positions, normals, indices } = mesh;
   const { nx, ny, nz, hx, hy, hz, origin } = field;
   const nv = positions.length / 3;
-  const thickness = new Float32Array(nv), pore = new Float32Array(nv), curvature = new Float32Array(nv), overhang = new Float32Array(nv);
+  const thickness = new Float32Array(nv), pore = new Float32Array(nv), curvature = new Float32Array(nv), overhang = new Float32Array(nv), gauss = new Float32Array(nv);
   const idx = (x, y, z) => {
     const i = Math.round((x - origin[0]) / hx), j = Math.round((y - origin[1]) / hy), k = Math.round((z - origin[2]) / hz);
     if (i < 0 || j < 0 || k < 0 || i >= nx || j >= ny || k >= nz) return -1;
@@ -253,12 +253,17 @@ export function vertexMaps(params, field, mesh, dt, { overhangDeg = 45 } = {}) {
     const g2 = fx * fx + fy * fy + fz * fz, g = Math.sqrt(g2) || 1e-12;
     const num = fx * fx * (fyy + fzz) + fy * fy * (fxx + fzz) + fz * fz * (fxx + fyy) - 2 * (fx * fy * fxy + fx * fz * fxz + fy * fz * fyz);
     curvature[v] = num / (2 * g * g * g);
+    // Courbure de Gauss K = grad f . adj(Hess f) . grad f / |grad f|^4 (Goldman 2005).
+    const kn = fx * fx * (fyy * fzz - fyz * fyz) + fy * fy * (fxx * fzz - fxz * fxz) + fz * fz * (fxx * fyy - fxy * fxy)
+      + 2 * (fx * fy * (fxz * fyz - fxy * fzz) + fx * fz * (fxy * fyz - fxz * fyy) + fy * fz * (fxy * fxz - fyz * fxx));
+    gauss[v] = kn / (g2 * g2);
     // Surplomb : surface tournee vers le bas, plus inclinee que l'angle limite.
     overhang[v] = n2 < -cosO ? 1 : Math.max(0, -n2) / cosO * 0.6;
   }
   // Statistiques ponderees par l'aire des triangles.
-  let area = 0, overA = 0, concA = 0, Hsum = 0;
-  const absH = [];
+  let area = 0, overA = 0, concA = 0, Hsum = 0, saddleA = 0, accA = 0;
+  const absH = [], absK = [];
+  const accessMin = 0.1; // pore de 100 µm : seuil courant de colonisation osseuse (Karageorgiou 2005)
   for (let t = 0; t < indices.length; t += 3) {
     const a = indices[t] * 3, b = indices[t + 1] * 3, c = indices[t + 2] * 3;
     const ux = positions[b] - positions[a], uy = positions[b + 1] - positions[a + 1], uz = positions[b + 2] - positions[a + 2];
@@ -269,12 +274,18 @@ export function vertexMaps(params, field, mesh, dt, { overhangDeg = 45 } = {}) {
     area += A;
     if (o >= 0.999) overA += A;
     if (Hm < 0) concA += A;
+    if (gauss[indices[t]] + gauss[indices[t + 1]] + gauss[indices[t + 2]] < 0) saddleA += A;
+    if (Math.min(pore[indices[t]], pore[indices[t + 1]], pore[indices[t + 2]]) >= accessMin) accA += A;
     Hsum += Hm * A;
   }
-  for (let v = 0; v < nv; v += 7) absH.push(Math.abs(curvature[v]));
+  for (let v = 0; v < nv; v += 7) { absH.push(Math.abs(curvature[v])); absK.push(Math.abs(gauss[v])); }
   absH.sort((a, b) => a - b);
+  absK.sort((a, b) => a - b);
   return {
-    thickness, pore, curvature, overhang,
+    thickness, pore, curvature, overhang, gauss,
+    saddleFraction: area ? saddleA / area : 0,
+    accessibleFraction: area ? accA / area : 0,
+    gaussScale: absK[Math.floor(absK.length * 0.9)] || 1,
     overhangFraction: area ? overA / area : 0,
     concaveFraction: area ? concA / area : 0,
     meanCurvature: area ? Hsum / area : 0,

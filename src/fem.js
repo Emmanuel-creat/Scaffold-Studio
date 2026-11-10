@@ -239,3 +239,37 @@ export function percentile(arr, p) {
   const s = Float32Array.from(arr).sort();
   return s[Math.min(s.length - 1, Math.floor(p * s.length))];
 }
+
+// Module de Young dans la direction n : 1/E(n) = a . S . a, a = [n1², n2², n3², n2n3, n1n3, n1n2] (notation de Voigt).
+export function directionalModulus(S, n) {
+  const [x, y, z] = n;
+  const a = [x * x, y * y, z * z, y * z, x * z, x * y];
+  let inv = 0;
+  for (let i = 0; i < 6; i++) for (let j = 0; j < 6; j++) inv += a[i] * S[i * 6 + j] * a[j];
+  return 1 / inv;
+}
+
+// Surface d'anisotropie : rayon proportionnel a E(n) sur une sphere discretisee (point 32).
+export function anisotropySurface(S, seg = 48) {
+  const rows = seg + 1, cols = seg * 2 + 1;
+  const dirs = new Float32Array(rows * cols * 3), E = new Float32Array(rows * cols);
+  let Emin = Infinity, Emax = 0, nMin = null, nMax = null;
+  for (let i = 0; i < rows; i++) {
+    const th = (Math.PI * i) / seg;
+    for (let j = 0; j < cols; j++) {
+      const ph = (Math.PI * j) / seg;
+      const n = [Math.sin(th) * Math.cos(ph), Math.sin(th) * Math.sin(ph), Math.cos(th)];
+      const v = i * cols + j;
+      dirs.set(n, v * 3);
+      E[v] = directionalModulus(S, n);
+      if (E[v] < Emin) { Emin = E[v]; nMin = n; }
+      if (E[v] > Emax) { Emax = E[v]; nMax = n; }
+    }
+  }
+  const indices = [];
+  for (let i = 0; i < seg; i++) for (let j = 0; j < cols - 1; j++) {
+    const a = i * cols + j, b = a + cols;
+    indices.push(a, b, a + 1, a + 1, b, b + 1);
+  }
+  return { dirs, E, indices: new Uint32Array(indices), Emin, Emax, nMin, nMax, ratio: Emax / Emin };
+}

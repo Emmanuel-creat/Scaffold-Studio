@@ -30,10 +30,10 @@ Ces compromis se calculent d'habitude dans plusieurs logiciels lourds (CAO, mail
 | Design inverse | Porosité calculée pour obtenir une épaisseur de strut visée ou une rigidité visée |
 | Morphologie | Porosité mesurée, diamètre de pore et épaisseur de strut par sphère inscrite, surface spécifique, interconnectivité |
 | Mécanique | Module de Young et limite d'élasticité estimés (Gibson-Ashby) pour 10 matériaux et un matériau personnalisé, comparés aux plages de l'os, masse |
-| Analyses avancées | Histogrammes des pores et des struts, diamètre de passage (percolation), tortuosité géométrique et hydraulique, porosimétrie simulée, profil de porosité selon la hauteur, volumes fermés et îlots détachés, part de surface concave |
-| Cartes de surface | Épaisseur locale, taille de pore locale, courbure moyenne, surplombs à l'impression, cisaillement, von Mises |
+| Analyses avancées | Histogrammes des pores et des struts, diamètre de passage (percolation), tortuosité géométrique et hydraulique, porosimétrie simulée, profil de porosité selon la hauteur, volumes fermés et îlots détachés, part de surface concave, part de surface en selle, surface accessible aux cellules (pores d'au moins 100 µm) |
+| Cartes de surface | Épaisseur locale, taille de pore locale, courbure moyenne, courbure de Gauss, surplombs à l'impression, cisaillement, von Mises |
 | Comparaison | Version figée A comparée à la version courante, écarts en pourcentage |
-| Éléments finis | Homogénéisation périodique de la cellule par éléments finis voxel : tenseur de rigidité, modules Ex, Ey, Ez, cisaillement, anisotropie de Zener, carte de von Mises sur la surface, concentration de contrainte, loi de Gibson-Ashby ajustée pour la surface choisie, module d'une éprouvette à gradient |
+| Éléments finis | Homogénéisation périodique de la cellule par éléments finis voxel : tenseur de rigidité, modules Ex, Ey, Ez, cisaillement, anisotropie de Zener, surface d'anisotropie du module en 3D et rapport Emax / Emin, carte de von Mises sur la surface, concentration de contrainte, loi de Gibson-Ashby ajustée pour la surface choisie, module d'une éprouvette à gradient |
 | Essais simulés | Courbe de compression modèle avec grandeurs de la norme ISO 13314 (plateau, densification, énergie absorbée), endurance en fatigue, élancement et flambement des struts |
 | Résorption | Évolution de la masse et de la rigidité sur 36 mois pour le magnésium, le zinc, le β-TCP, le PCL et le PLA |
 | Fabrication | Vérification de l'épaisseur minimale selon le procédé, lissage de Taubin, aperçu des couches d'impression, surplombs, plateau de fabrication avec le nombre de pièces, temps et coût estimés |
@@ -80,14 +80,18 @@ npm install
 npm run dev
 ```
 
-L'application s'ouvre sur http://localhost:5173. Une fois installée, elle fonctionne sans connexion.
+L'application s'ouvre sur http://localhost:5173. La version en ligne s'installe comme une application de bureau (bouton d'installation du navigateur) et fonctionne ensuite sans connexion.
 
 Autres commandes :
 
 ```bash
 npm test          # tests unitaires (maillage, mesures, solveur)
 npm run build     # version de production dans dist/
+npm run e2e       # tests de bout en bout dans Chromium (Playwright), captures dans test-results/
+npm run bench     # temps des calculs principaux, comparés à bench.baseline.json
 ```
+
+La CI (GitHub Actions) lance à chaque envoi les tests unitaires, les tests de non-régression sur des valeurs de référence, le banc de performance (tableau dans le résumé du job, alerte au-delà de 50 % de ralentissement) et les tests de bout en bout, dont les captures d'écran sont conservées 14 jours.
 
 ## Raccourcis
 
@@ -117,7 +121,9 @@ Le studio image et vidéo prépare directement un post LinkedIn :
 - Rendu réaliste (halo et vignettage, anticrénelage conservé), profondeur de champ réglable.
 - Titre et sous-titre incrustés, barre d'échelle en millimètres, présents dans l'image et la vidéo.
 - Rendu 4K en PNG (grand côté de 3 840 px) hors écran.
-- Séquences de caméra enregistrées seules : tour complet, grue montante, plongée vers le coeur, ou trajet libre passant par des vues clés.
+- Séquences de caméra enregistrées seules : tour complet, grue montante, plongée vers le coeur, révélation par coupe animée, ou trajet libre passant par des vues clés.
+- Rendu image par image : chaque image est calculée puis codée en H.264 avec son horodatage exact, la vidéo MP4 est fluide à 60 i/s en Full HD ou en 4K, même sur un ordinateur lent.
+- Grain de poudre partiellement fondue sur la surface, pour une pièce qui ressemble à un titane imprimé en gros plan.
 - Lignes de courant en tubes colorés par la vitesse, thème clair pour les captures sur fond blanc.
 
 ## Méthodes et validation
@@ -135,6 +141,7 @@ Les méthodes sont détaillées dans le [cahier des charges](docs/CAHIER_DES_CHA
 - **Oxygène :** état stationnaire de D ∇²c − u · ∇c = consommation, avec D = 3 × 10⁻⁹ m²/s, consommation de Michaelis-Menten des cellules adhérentes sur chaque face de paroi, schéma amont pour l'advection, Gauss-Seidel sur-relaxé. La cellule périodique est répétée sur la hauteur de la pièce ; la culture statique reçoit le milieu par les deux faces.
 - **Ensemencement :** cellules injectées à l'entrée, transportées par le champ de vitesse et sédimentant à 9 µm/s (loi de Stokes pour une cellule de 15 µm), adhésion au contact d'une paroi avec une probabilité réglable.
 - **Croissance tissulaire :** modèle de croissance pilotée par la courbure (Rumpler 2008, Bidan 2012). Dans un pore de rayon local R, un point à la distance d de la paroi est comblé au temps d (2R − d) / (2λ).
+- **Courbures et anisotropie :** courbures moyenne et de Gauss tirées du gradient et de la hessienne du champ implicite (Goldman 2005) ; module de Young dans une direction n par 1/E(n) = a · S · a, avec S la souplesse homogénéisée et a = (n1², n2², n3², n2n3, n1n3, n1n2).
 - **Fluide non newtonien :** viscosité de Carreau du sang au taux de cisaillement caractéristique des pores, perte de charge et cisaillement corrigés au premier ordre.
 
 Tests automatiques :
@@ -158,6 +165,9 @@ Tests automatiques :
 | Ajustement de Gibson-Ashby | coefficients retrouvés sur une loi puissance connue |
 | Analyses | profil de porosité, absence de volume fermé sur un gyroïde, tortuosité, passage plus petit que le pore moyen, épaisseur locale cohérente avec le strut |
 | Treillis et Voronoï | porosité visée atteinte à 4 points près, poutres BCC au bon endroit, transition gyroïde vers BCC, formes ajoutées et retirées, profil et carte de densité |
+| Courbure de Gauss | gyroïde en selle sur plus de 75 % de sa surface |
+| Surface d'anisotropie | sphère pour un matériau isotrope, maximum selon la diagonale pour un cubique à A > 1 |
+| Non-régression | porosité, pore, strut, surface spécifique et perméabilité du gyroïde, morphologie de l'octet, à 1 à 3 % près |
 | Fragments détachés | le plus gros solide est conservé, les fragments sont vidés |
 | Volume du maillage par rapport à la porosité visée | écart inférieur à 3 points sur les 10 combinaisons surface et mode |
 | Transformée de distance | distances exactes sur un cas de référence |
@@ -194,7 +204,10 @@ src/
   project.js       projet, lien partageable, historique
   ux.js            palette de commandes, visite guidée, historique en vignettes
   i18n.js          traduction français et anglais
-tests/             tests unitaires (Vitest)
+tests/             tests unitaires et de non-régression (Vitest)
+e2e/               tests de bout en bout (Playwright)
+scripts/bench.mjs  banc de performance
+public/            manifeste et service worker (application installable hors ligne)
 ```
 
 ## Auteur

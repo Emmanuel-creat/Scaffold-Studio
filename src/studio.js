@@ -23,6 +23,7 @@ export const PATHS = {
   crane: 'Grue montante',
   dive: 'Plongée vers le coeur',
   keys: 'Vues clés',
+  reveal: 'Révélation par coupe',
 };
 
 // Taille du rendu haute definition : grand cote de 3840 px.
@@ -49,6 +50,12 @@ export function shotPose(path, u, start, keys) {
   if (path === 'dive') {
     const v = ease(u);
     return { pos: center.clone().add(off.clone().multiplyScalar(1 - 0.93 * v)), target: center.clone() };
+  }
+  if (path === 'reveal') {
+    // Un quart de tour pendant que le plan de coupe descend jusqu'au coeur, puis remonte (point 65).
+    const v = ease(u);
+    const cut = u < 0.6 ? 100 - 55 * ease(u / 0.6) : 45 + 55 * ease((u - 0.6) / 0.4);
+    return { pos: at(a0 + (Math.PI / 2) * v, e0, r0), target: center.clone(), cut };
   }
   if (path === 'keys' && keys && keys.length >= 2) {
     const pc = new THREE.CatmullRomCurve3(keys.map((k) => new THREE.Vector3(...k.pos)), false, 'centripetal');
@@ -200,6 +207,22 @@ export class Studio {
   }
 
   // Rendu hors ecran au grand cote de 3840 px, rendu une seule fois puis restitue.
+  // Rendu hors ecran a taille fixe (dimensions paires pour le codage H.264).
+  beginOffscreen(long) {
+    const r = this.renderer;
+    this._saved = { size: r.getSize(new THREE.Vector2()), ratio: r.getPixelRatio() };
+    let [W, H] = hiResSize(FORMATS[this.settings.format]?.ratio, this._saved.size.x / Math.max(this._saved.size.y, 1), long);
+    W -= W % 2; H -= H % 2;
+    r.setPixelRatio(1);
+    this.setSize(W, H);
+    return [W, H];
+  }
+  endOffscreen() {
+    if (!this._saved) return;
+    this.renderer.setPixelRatio(this._saved.ratio);
+    this.setSize(this._saved.size.x, this._saved.size.y);
+    this._saved = null;
+  }
   async renderHiRes(focusDist, long = 3840) {
     const r = this.renderer;
     const old = r.getSize(new THREE.Vector2()), oldRatio = r.getPixelRatio();

@@ -76,6 +76,8 @@ export function buildReport(state, app, image) {
     a && [t('Diamètre de passage'), fmt(a.percolation * 1000, 0), 'µm'],
     a && a.tortuosity && [t('Tortuosité géométrique'), fmt(a.tortuosity, 2)],
     a && [t('Surface concave'), pct(a.concaveFraction, 0), '%'],
+    a && a.saddleFraction != null && [t('Surface en selle'), pct(a.saddleFraction, 0), '%'],
+    a && a.accessibleFraction != null && [t('Surface accessible aux cellules'), pct(a.accessibleFraction, 0), '%'],
     a && [t('Volumes de vide fermés'), a.closed.closedCount], a && [t('Îlots solides détachés'), a.closed.islands],
   ]);
   const meca = rows([

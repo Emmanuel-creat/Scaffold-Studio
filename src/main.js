@@ -12,8 +12,9 @@ import { buildEstimate } from './fabrication.js';
 import { materialOf, porosityForE, PROCESSES } from './metrics.js';
 import { parseSTL, normalize, stlToSdf } from './stl.js';
 import { compressionCurve, fatigue } from './mechanics.js';
-import { to3MF, toVTKSurface, toVTKVelocity } from './exporters.js';
-import { buildReport } from './report.js';
+import { anisotropySurface, engineering } from './fem.js';
+// Exports et rapport charges a la demande : demarrage plus rapide (point 89).
+const exporters = () => import('./exporters.js');
 import { History, serialize, deserialize, encodeHash, decodeHash } from './project.js';
 import { t, getLang, setLang, translatePage } from './i18n.js';
 import { turbo } from './format.js';
@@ -98,6 +99,43 @@ const clip = new THREE.Plane(new THREE.Vector3(-1, 0, 0), 1e6);
 const AXES = { x: 0, y: 1, z: 2 };
 
 const frontMat = new THREE.MeshPhysicalMaterial({ side: THREE.FrontSide, clippingPlanes: [clip] });
+// Grain de poudre partiellement fondue a la surface d'une piece imprimee (point 66) :
+// billes de rayon aleatoire placees sur une grille de Voronoi en 3D, estompees au loin pour eviter le scintillement.
+const grain = { amp: { value: 0 }, freq: { value: 1 / 0.04 } };
+frontMat.onBeforeCompile = (sh) => {
+  sh.uniforms.uGrain = grain.amp; sh.uniforms.uGrainFreq = grain.freq;
+  sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vObj;')
+    .replace('#include <begin_vertex>', '#include <begin_vertex>\nvObj = position;');
+  sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
+varying vec3 vObj;
+uniform float uGrain, uGrainFreq;
+vec3 gHash(vec3 p) { p = fract(p * vec3(443.897, 441.423, 437.195)); p += dot(p, p.yzx + 19.19); return fract((p.xxy + p.yzz) * p.zyx); }`)
+    .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+if (uGrain > 0.0) {
+  vec3 gp = vObj * uGrainFreq;
+  float fade = clamp(1.6 - length(fwidth(gp)) * 1.4, 0.0, 1.0);
+  if (fade > 0.0) {
+    // billes posees sur la paroi : seules comptent celles dont le centre est proche du plan tangent,
+    // la normale devient celle de la calotte spherique qui depasse (rayon r, ecart tangent dt)
+    mat3 vm = mat3(viewMatrix);
+    vec3 cell = floor(gp), bestT = vec3(0.0); float bh = 0.0;
+    for (int i = -1; i <= 1; i++) for (int j = -1; j <= 1; j++) for (int k = -1; k <= 1; k++) {
+      vec3 c = cell + vec3(float(i), float(j), float(k));
+      vec3 h = gHash(c);
+      vec3 v = vm * (gp - c - h);
+      float dn = dot(v, normal);
+      vec3 vt = v - dn * normal;
+      float r = 0.35 + 0.3 * fract(h.x * 7.13);
+      float hh = r * r - dot(vt, vt) - dn * dn * 0.5;
+      if (hh > bh) { bh = hh; bestT = vt; }
+    }
+    if (bh > 0.0) {
+      vec3 nb = normalize(normal * sqrt(bh) + bestT);
+      normal = normalize(mix(normal, nb, uGrain * fade * smoothstep(0.0, 0.02, bh) * 0.8));
+    }
+  }
+}`);
+};
 const backMat = new THREE.MeshStandardMaterial({ side: THREE.BackSide, color: 0x6b2c36, roughness: 0.8, clippingPlanes: [clip] });
 
 function applyLook() {
@@ -110,6 +148,7 @@ function applyLook() {
   frontMat.envMapIntensity = wss ? 0.35 : 1;
   frontMat.clearcoat = wss ? 0 : (look.clearcoat || 0);
   frontMat.sheen = wss ? 0 : (look.sheen || 0);
+  grain.amp.value = state.studio.grain && !wss ? 1 : 0;
   const op = state.view.opacity / 100;
   frontMat.transparent = op < 1; frontMat.opacity = op; frontMat.depthWrite = op >= 1;
   backMat.transparent = op < 1; backMat.opacity = op;
@@ -169,6 +208,8 @@ function requestGeometry() {
   stopFlow(true);
   clearBio(true);
   app.tensor = null;
+  if (app.fem) app.fem.showAniso = false;
+  showAnisotropy(false);
   if (geoBusy) newGeoWorker();
   geoBusy = true;
   const id = ++geoId;
@@ -475,6 +516,7 @@ const MAP_INFO = {
   thickness: { label: 'Épaisseur locale (µm)', max: () => app.metrics.strut.p95 * 1.25 },
   pore: { label: 'Taille de pore locale (µm)', max: () => app.metrics.pore.p95 * 1.25 },
   curvature: { label: 'Courbure moyenne (mm⁻¹)', max: () => (app.analysis ? app.analysis.curvatureScale : 1) },
+  gauss: { label: 'Courbure de Gauss (mm⁻²)', max: () => (app.analysis ? app.analysis.gaussScale : 1) },
   overhang: { label: 'Surplombs', max: () => 1 },
   oxygen: { label: 'Oxygène dissous (µM)', min: () => app.oxyRange[0], max: () => app.oxyRange[1] },
 };
@@ -495,7 +537,7 @@ function refreshColors() {
     const max = MAP_INFO[mode].max(), min = MAP_INFO[mode].min ? MAP_INFO[mode].min() : 0;
     for (let v = 0; v < vals.length; v++) {
       let rgb;
-      if (mode === 'curvature') rgb = diverge(vals[v] / max);
+      if (mode === 'curvature' || mode === 'gauss') rgb = diverge(vals[v] / max);
       else if (mode === 'overhang') rgb = vals[v] >= 1 ? [0.86, 0.2, 0.22] : [0.78 + vals[v] * 0.25, 0.8 - vals[v] * 0.2, 0.82 - vals[v] * 0.6];
       else if (!Number.isFinite(vals[v])) rgb = [0.55, 0.57, 0.6];
       else rgb = turbo((vals[v] - min) / Math.max(max - min, 1e-12));
@@ -521,7 +563,7 @@ function showLegend() {
   if (mode && MAP_INFO[mode] && app.metrics) {
     const max = MAP_INFO[mode].max();
     let bar, ticks;
-    if (mode === 'curvature') {
+    if (mode === 'curvature' || mode === 'gauss') {
       bar = Array.from({ length: 11 }, (_, i) => `rgb(${diverge(i / 5 - 1).map((v) => Math.round(v * 255))}) ${i * 10}%`).join(',');
       ticks = [-max, -max / 2, 0, max / 2, max].map((v) => v.toLocaleString('fr-FR', { maximumFractionDigits: 1 }));
     } else if (mode === 'overhang') {
@@ -532,7 +574,8 @@ function showLegend() {
       const min = MAP_INFO[mode].min ? MAP_INFO[mode].min() : 0;
       ticks = Array.from({ length: 5 }, (_, i) => Math.round((min + ((max - min) * i) / 4) * 1000).toLocaleString('fr-FR'));
     }
-    const extra = mode === 'curvature' ? `<div class="scale-legend"><span>${t('concave')}</span><span>${t('convexe')}</span></div>` : '';
+    const extra = mode === 'curvature' ? `<div class="scale-legend"><span>${t('concave')}</span><span>${t('convexe')}</span></div>`
+      : mode === 'gauss' ? `<div class="scale-legend"><span>${t('selle')}</span><span>${t('dôme')}</span></div>` : '';
     el.innerHTML = `<div>${t(MAP_INFO[mode].label)}</div><div class="colorbar" style="background:linear-gradient(90deg,${bar})"></div><div class="scale-legend">${ticks.map((x) => `<span>${x}</span>`).join('')}</div>${extra}`;
     el.hidden = false;
     return;
@@ -618,6 +661,36 @@ function drawPlate() {
     }
     plateGroup.add(ghost);
   }
+}
+
+// Surface d'anisotropie du module, posee a cote de la piece (point 32).
+const anisoGroup = new THREE.Group();
+scene.add(anisoGroup);
+function showAnisotropy(on) {
+  for (const c of [...anisoGroup.children]) { anisoGroup.remove(c); c.geometry && c.geometry.dispose(); }
+  if (!on || !app.fem || !app.fem.result) return;
+  const sf = anisotropySurface(engineering(app.fem.result.C).S, 48);
+  const [X, Y, Z] = specimenBox(state.shape);
+  const R = Math.max(X, Y, Z) * 0.42;
+  const pos = new Float32Array(sf.dirs.length), col = new Float32Array(sf.dirs.length);
+  for (let v = 0; v < sf.E.length; v++) {
+    const r = (sf.E[v] / sf.Emax) * R;
+    for (let k = 0; k < 3; k++) pos[v * 3 + k] = sf.dirs[v * 3 + k] * r;
+    const c = turbo(sf.ratio > 1.0001 ? (sf.E[v] - sf.Emin) / (sf.Emax - sf.Emin) : 0.5);
+    col.set(c, v * 3);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  g.setIndex(new THREE.BufferAttribute(sf.indices, 1));
+  g.computeVertexNormals();
+  const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, side: THREE.DoubleSide }));
+  const axes = new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(-R * 1.2, 0, 0), new THREE.Vector3(R * 1.2, 0, 0), new THREE.Vector3(0, -R * 1.2, 0), new THREE.Vector3(0, R * 1.2, 0),
+    new THREE.Vector3(0, 0, -R * 1.2), new THREE.Vector3(0, 0, R * 1.2)]), new THREE.LineBasicMaterial({ color: 0x8892a0 }));
+  const lab = ['x', 'y', 'z'].map((a, i) => { const sp = labelSprite(a, R * 0.22); sp.position.setComponent(i, R * 1.35); return sp; });
+  anisoGroup.add(m, axes, ...lab);
+  anisoGroup.position.set(X + R * 1.6, Y / 2, Z / 2);
 }
 
 // Cotes de la piece : trois lignes de cote avec leur longueur (point 19).
@@ -775,10 +848,11 @@ const exportMenu = document.getElementById('export-menu');
 const exportBtn = document.getElementById('btn-export');
 exportBtn.onclick = (e) => { e.stopPropagation(); exportMenu.hidden = !exportMenu.hidden; exportBtn.setAttribute('aria-expanded', String(!exportMenu.hidden)); };
 document.addEventListener('click', () => { exportMenu.hidden = true; exportBtn.setAttribute('aria-expanded', 'false'); });
-exportMenu.addEventListener('click', (e) => {
+exportMenu.addEventListener('click', async (e) => {
   const b = e.target.closest('[data-export]');
   if (!b || !app.mesh) return;
   const kind = b.dataset.export;
+  const { to3MF, toVTKSurface, toVTKVelocity } = await exporters();
   if (kind === 'stl') exportStl();
   else if (kind === '3mf') download(to3MF(meshArrays(), { name: baseName(), material: materialOf(state).label }), `${baseName()}.3mf`);
   else if (kind === 'vtk') {
@@ -804,9 +878,10 @@ exportMenu.addEventListener('click', (e) => {
   } else if (kind === 'csv') exportCsv();
   exportMenu.hidden = true;
 });
-document.getElementById('btn-report').onclick = () => {
+document.getElementById('btn-report').onclick = async () => {
   if (!app.metrics) return;
-  renderer.render(scene, camera);
+  const { buildReport } = await import('./report.js');
+  studio.render(focusDistance());
   const html = buildReport(state, app, canvas.toDataURL('image/jpeg', 0.9));
   download(new Blob([html], { type: 'text/html' }), `${baseName()}_rapport.html`);
 };
@@ -888,7 +963,8 @@ function startShot() {
   if (app.fly) exitFly();
   const start = { center: controls.target.clone(), pos: camera.position.clone() };
   if (s.path === 'keys') { camera.position.fromArray(s.keys[0].pos); controls.target.fromArray(s.keys[0].target); }
-  app.shot = { t0: performance.now(), dur: s.duration * 1000, path: s.path, start, keys: s.keys.slice(), rec: false };
+  if (s.record && s.offline) { renderFrames(start); return; }
+  app.shot = { t0: performance.now(), dur: s.duration * 1000, path: s.path, start, keys: s.keys.slice(), rec: false, cut0: state.view.cut };
   controls.enabled = false;
   if (s.record && !app.recorder) { toggleRecord(); app.shot.rec = true; }
   status(t('Séquence en cours, Échap pour arrêter'));
@@ -896,6 +972,7 @@ function startShot() {
 function stopShot() {
   if (!app.shot) return;
   if (app.shot.rec && app.recorder) toggleRecord();
+  if (app.shot.path === 'reveal') { state.view.cut = app.shot.cut0; applyView(); ctl.refresh(); }
   app.shot = null;
   controls.enabled = true;
   status(t('Séquence terminée'));
@@ -903,11 +980,72 @@ function stopShot() {
 function updateShot() {
   const sh = app.shot;
   const u = Math.min(1, (performance.now() - sh.t0) / sh.dur);
-  const p = shotPose(sh.path, u, sh.start, sh.keys);
+  poseCamera(shotPose(sh.path, u, sh.start, sh.keys));
+  if (u >= 1) stopShot();
+}
+function poseCamera(p) {
   camera.position.copy(p.pos);
   controls.target.copy(p.target);
   camera.lookAt(p.target);
-  if (u >= 1) stopShot();
+  if (p.cut != null) { state.view.cut = p.cut; applyView(); }
+}
+
+// Rendu image par image : chaque image est calculee puis codee en H.264 avec son horodatage exact,
+// la video reste fluide a 60 i/s meme si l'ordinateur met une seconde par image (point 62).
+async function renderFrames(start) {
+  const s = state.studio;
+  if (!window.VideoEncoder) { status(t('Rendu image par image non pris en charge par ce navigateur')); return; }
+  const { Muxer, ArrayBufferTarget } = await import('mp4-muxer');
+  const fps = 60, n = Math.round(s.duration * fps);
+  const cut0 = state.view.cut, cam0 = camera.position.clone(), tgt0 = controls.target.clone();
+  const [W, H] = studio.beginOffscreen(Number(s.offlineRes) || 1080);
+  // H.264 d'abord (lu partout), VP9 dans un MP4 si le navigateur n'a pas de codeur H.264.
+  const bitrate = Math.round(W * H * fps * 0.12);
+  const candidates = [
+    { mux: 'avc', codec: W * H > 1920 * 1088 ? 'avc1.640033' : 'avc1.640028' },
+    { mux: 'vp9', codec: W * H > 1920 * 1088 ? 'vp09.00.51.08' : 'vp09.00.40.08' },
+  ];
+  let pick = null;
+  for (const c of candidates) {
+    const r = await VideoEncoder.isConfigSupported({ codec: c.codec, width: W, height: H, bitrate, framerate: fps }).catch(() => ({ supported: false }));
+    if (r.supported) { pick = c; break; }
+  }
+  if (!pick) { studio.endOffscreen(); status(t('Aucun codeur vidéo disponible sur ce navigateur')); return; }
+  const muxer = new Muxer({ target: new ArrayBufferTarget(), video: { codec: pick.mux, width: W, height: H, frameRate: fps }, fastStart: 'in-memory' });
+  let failed = null;
+  const enc = new VideoEncoder({ output: (chunk, meta) => muxer.addVideoChunk(chunk, meta), error: (e) => { failed = e; } });
+  const cfg = { codec: pick.codec, width: W, height: H, bitrate, framerate: fps };
+  enc.configure(cfg);
+  app.rendering = true; controls.enabled = false;
+  busy(true, t('Rendu image par image'));
+  try {
+    for (let f = 0; f < n && !failed && app.rendering; f++) {
+      poseCamera(shotPose(s.path, f / (n - 1), start, s.keys));
+      if (app.particles && app.flow && state.view.particles) app.particles.update(1 / fps, state.flow.speed, state.cell * 0.12);
+      studio.render(focusDistance());
+      const frame = new VideoFrame(canvas, { timestamp: Math.round((f * 1e6) / fps), duration: Math.round(1e6 / fps) });
+      enc.encode(frame, { keyFrame: f % (fps * 2) === 0 });
+      frame.close();
+      if (enc.encodeQueueSize > 4 || f % 10 === 0) {
+        busy(true, `${t('Rendu image par image')} ${f + 1} / ${n}`);
+        while (enc.encodeQueueSize > 4) await new Promise((r) => setTimeout(r, 5));
+        await new Promise((r) => setTimeout(r, 0));
+      }
+    }
+    await enc.flush();
+    muxer.finalize();
+    if (failed) throw failed;
+    if (app.rendering) download(new Blob([muxer.target.buffer], { type: 'video/mp4' }), `${baseName()}_${s.path}_${W}x${H}_60fps.mp4`);
+  } catch (e) {
+    status(`${t('Rendu interrompu')} : ${e.message || e}`);
+  } finally {
+    enc.state !== 'closed' && enc.close();
+    studio.endOffscreen();
+    state.view.cut = cut0; applyView();
+    camera.position.copy(cam0); controls.target.copy(tgt0);
+    app.rendering = false; controls.enabled = true;
+    busy(false);
+  }
 }
 function addKey() {
   state.studio.keys.push({ pos: camera.position.toArray(), target: controls.target.toArray() });
@@ -938,7 +1076,7 @@ window.addEventListener('keydown', (e) => {
   if (k === '/') { e.preventDefault(); palette.open(); return; }
   if (k === 'h' && !e.ctrlKey) document.body.classList.toggle('capture');
   else if (k === 'f' && !e.ctrlKey && !e.metaKey) (app.fly ? exitFly() : enterFly());
-  else if (k === 'escape') { stopShot(); exitFly(); document.body.classList.remove('capture'); }
+  else if (k === 'escape') { app.rendering = false; stopShot(); exitFly(); document.body.classList.remove('capture'); }
   else if (k === 'r' && !e.ctrlKey && !e.metaKey) toggleRecord();
   else if (k === 'p' && !e.ctrlKey && !e.metaKey) snapshot();
   else if (k === ' ') { e.preventDefault(); onRunFlow(); }
@@ -962,6 +1100,7 @@ function runFem() {
     if (!d.ok) { app.fem = { error: d.error }; updatePanel(); return; }
     const r = d.result;
     app.fem = { result: r, key: app.fem.key, showVm: true };
+    showAnisotropy(false);
     // L'ajustement de Gibson-Ashby remplace la loi generique pour cette surface.
     state.gaFits = { ...(state.gaFits || {}), [`${state.type}|${state.mode}`]: { C: r.fit.C, n: r.fit.n } };
     if (app.metrics) {
@@ -1012,6 +1151,11 @@ document.getElementById('metrics').addEventListener('click', (e) => {
   if (b.dataset.act === 'fem') runFem();
   else if (b.dataset.act === 'ref') { app.ref = snapshotForCompare(state, app); updatePanel(); }
   else if (b.dataset.act === 'unref') { app.ref = null; updatePanel(); }
+  else if (b.dataset.act === 'aniso' && app.fem) {
+    app.fem.showAniso = !app.fem.showAniso;
+    showAnisotropy(app.fem.showAniso);
+    updatePanel();
+  }
   else if (b.dataset.act === 'vm' && app.fem) {
     app.fem.showVm = !app.fem.showVm;
     if (!app.fem.showVm && state.flow.wss && app.flow && !app.wss) computeWss();
@@ -1323,6 +1467,7 @@ const callbacks = {
   beforeChange,
   onStudio: () => {
     resize();
+    applyLook();
     if (state.studio.format !== app.lastFormat) { app.lastFormat = state.studio.format; fitView(); }
     saveSession();
   },
@@ -1347,6 +1492,7 @@ updateHistoryButtons();
 const clock = new THREE.Clock();
 renderer.setAnimationLoop(() => {
   const dt = Math.min(clock.getDelta(), 0.05);
+  if (app.rendering) return; // le rendu image par image pilote lui-meme la scene
   if (app.shot) updateShot(); else if (app.fly) updateFly(dt); else controls.update();
   if (app.particles && app.flow && state.view.particles) {
     app.particles.update(dt, state.flow.speed, state.cell * 0.12);
@@ -1361,6 +1507,10 @@ renderer.setAnimationLoop(() => {
 });
 
 window.scaffoldStudio = { app, state, history, studio };
+// Application installable et utilisable hors ligne une fois chargee (point 88).
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(() => {}));
+}
 applyTheme();
 app.lastFormat = state.studio.format;
 resize();

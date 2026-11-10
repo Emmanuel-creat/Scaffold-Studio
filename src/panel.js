@@ -8,6 +8,7 @@ import { lineChart, barChart } from './charts.js';
 import { buildEstimate } from './fabrication.js';
 import { fmt, pct, sci, scalePos } from './format.js';
 import { nonNewtonian, FLUIDS } from './bio.js';
+import { anisotropySurface, engineering } from './fem.js';
 
 function scale(value, lo, hi, log, bands, labels) {
   const b = bands.map(([a, z, cls]) => {
@@ -144,6 +145,8 @@ function advanced(state, m, fem) {
         <button class="btn" data-act="vm" aria-pressed="${fem.showVm ? 'true' : 'false'}">${fem.showVm ? t('Masquer la carte de contrainte') : t('Carte de contrainte')}</button>
         <button class="btn" data-act="fem">${t('Recalculer')}</button>
       </div>
+      <button class="btn wide" data-act="aniso" aria-pressed="${fem.showAniso ? 'true' : 'false'}">${fem.showAniso ? t('Masquer la surface d\'anisotropie') : t('Surface d\'anisotropie en 3D')}</button>
+      ${metric(t('Rapport Emax / Emin'), fmt(anisotropySurface(engineering(r.C).S, 24).ratio, 2), '', '', t('Module de Young dans toutes les directions, tiré du tenseur de rigidité : 1 pour un matériau isotrope'))}
       <p class="hint">${t('Cellule périodique')} ${r.dims.join(' × ')} voxels, ${r.iterations.toLocaleString('fr-FR')} ${t('itérations')}, ${fmt(r.timeMs / 1000, 1)} s.${fit ? ` ${t('L\'ajustement remplace la loi générique dans les mesures.')}` : ''}${state.rotation && (state.rotation.x || state.rotation.y || state.rotation.z) ? ` ${t('Modules donnés dans le repère de la cellule, avant rotation.')}` : ''}</p>`;
   } else {
     femHtml = `<p class="hint">${t('Homogénéisation par éléments finis voxel de la cellule : tenseur de rigidité, carte de von Mises et loi de Gibson-Ashby propre à cette surface.')}</p>
@@ -213,6 +216,8 @@ function analysisGroup(state, m, a) {
     ${metric(t('Diamètre de passage'), fmt(a.percolation * 1000, 0), ' µm', '', t('Plus grosse sphère qui traverse la pièce de bas en haut : fenêtre limitante pour la migration cellulaire'))}
     ${a.tortuosity ? metric(t('Tortuosité géométrique'), fmt(a.tortuosity, 2), '', '', t('Plus court chemin dans les pores de la base au sommet, rapporté à la hauteur')) : ''}
     ${metric(t('Surface concave'), pct(a.concaveFraction, 0), ' %', '', t('Part de la surface à courbure moyenne négative, où le tissu se dépose en premier'))}
+    ${a.saddleFraction != null ? metric(t('Surface en selle'), pct(a.saddleFraction, 0), ' %', '', t('Part de la surface à courbure de Gauss négative, comme les surfaces minimales et l\'os trabéculaire')) : ''}
+    ${a.accessibleFraction != null ? metric(t('Surface accessible aux cellules'), pct(a.accessibleFraction, 0), ' %', '', t('Part de la surface qui borde un pore d\'au moins 100 µm, taille minimale citée pour la colonisation osseuse')) : ''}
     ${metric(t('Surface en surplomb'), pct(a.overhangFraction, 1), ' %', '', t('Faces tournées vers le bas, plus inclinées que l\'angle limite du procédé'))}
     <div class="kv">
       <span>${t('Volumes de vide fermés')}</span><b>${a.closed.closedCount}${a.closed.closedCount ? ` · ${fmt(a.closed.closedVol, 3)} mm³` : ''}</b>

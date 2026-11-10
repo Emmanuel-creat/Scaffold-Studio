@@ -61,12 +61,13 @@ self.onmessage = (e) => {
       percolation: percolationDiameter(field, dt.dtVoid),
       overhangFraction: maps.overhangFraction, concaveFraction: maps.concaveFraction,
       meanCurvature: maps.meanCurvature, curvatureScale: maps.curvatureScale,
+      saddleFraction: maps.saddleFraction, accessibleFraction: maps.accessibleFraction, gaussScale: maps.gaussScale,
     };
     const ds = [0.02, 0.05, 0.1, 0.2, 0.3, 0.5, 0.75, 1, 1.5].filter((d) => d / field.hx > 0.7);
     analysis.intrusion = intrusionCurve(field, dt.dtVoid, ds);
     analysis.timeMs = performance.now() - ta;
-    const m = { thickness: maps.thickness, pore: maps.pore, curvature: maps.curvature, overhang: maps.overhang };
-    self.postMessage({ id, analysis, maps: m }, [m.thickness.buffer, m.pore.buffer, m.curvature.buffer, m.overhang.buffer]);
+    const m = { thickness: maps.thickness, pore: maps.pore, curvature: maps.curvature, overhang: maps.overhang, gauss: maps.gauss };
+    self.postMessage({ id, analysis, maps: m }, Object.values(m).map((a) => a.buffer));
   } catch (err) {
     self.postMessage({ id, ok: false, error: String((err && err.message) || err) });
   }

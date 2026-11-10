@@ -38,3 +38,23 @@ describe('elements finis voxel', () => {
     expect(f.n).toBeCloseTo(2.1, 6);
   });
 });
+
+describe("surface d'anisotropie", () => {
+  it('isotrope : rayon constant ; cubique : maximum selon la diagonale si A > 1', async () => {
+    const { isoD, invert, directionalModulus, anisotropySurface } = await import('../src/fem.js');
+    const S = invert(isoD(2, 0.3), 6);
+    const s = anisotropySurface(S, 16);
+    expect(s.ratio).toBeCloseTo(1, 6);
+    expect(s.Emax).toBeCloseTo(2, 6);
+    // cubique : C11 = 3, C12 = 1, C44 = 2 (Zener 2) : plus raide en [111]
+    const C = new Float64Array(36);
+    for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) C[i * 6 + j] = i === j ? 3 : 1;
+    for (let i = 3; i < 6; i++) C[i * 6 + i] = 2;
+    const Sc = invert(C, 6);
+    const e100 = directionalModulus(Sc, [1, 0, 0]);
+    const r = 1 / Math.sqrt(3);
+    const e111 = directionalModulus(Sc, [r, r, r]);
+    expect(e100).toBeCloseTo(1 / Sc[0], 9);
+    expect(e111).toBeGreaterThan(e100);
+  });
+});
