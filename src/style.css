@@ -217,3 +217,49 @@ table.cmp td.down { color: var(--warn); }
 :root[data-theme=light] .viewport { background: radial-gradient(circle at 50% 40%, #ffffff 0%, #dfe4eb 75%); }
 :root[data-theme=light] .hud.tr, :root[data-theme=light] .hud.br, :root[data-theme=light] .hud.bc, :root[data-theme=light] .hud.fly { background: rgba(255,255,255,.88); color: var(--ink); }
 :root[data-theme=light] .hud.center { background: rgba(255,255,255,.3); }
+
+/* Palette de commandes, visite guidee, historique, accessibilite, telephone (vague 6) */
+.palette { width: min(560px, 92vw); padding: 0; overflow: hidden; }
+.palette-input { width: 100%; border: 0; border-bottom: 1px solid var(--line); background: var(--panel); padding: 14px 16px; font-size: 15px; outline: none; }
+.palette-list { list-style: none; margin: 0; padding: 6px; max-height: 50vh; overflow: auto; }
+.palette-list li { display: flex; justify-content: space-between; gap: 12px; padding: 8px 10px; border-radius: 6px; cursor: pointer; }
+.palette-list li small { color: var(--muted); white-space: nowrap; }
+.palette-list li[aria-selected=true] { background: var(--panel-2); outline: 1px solid var(--accent); }
+.palette-list li.empty { color: var(--muted); cursor: default; }
+.palette-foot { margin: 0; padding: 8px 14px; font-size: 11px; color: var(--muted); border-top: 1px solid var(--line); }
+.tour { position: fixed; inset: 0; z-index: 50; }
+.tour-hole { position: fixed; border-radius: 8px; box-shadow: 0 0 0 9999px rgba(0,0,0,.55); outline: 2px solid var(--accent); transition: all .25s ease; pointer-events: none; }
+.tour-card { position: fixed; width: 320px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; box-shadow: 0 16px 40px rgba(0,0,0,.4); transition: left .25s ease, top .25s ease; }
+.tour-card h3 { margin: 4px 0 6px; font-size: 15px; }
+.tour-card p { margin: 0 0 12px; color: var(--muted); }
+.tour-step { font: 11px var(--mono); color: var(--accent); }
+.tour-nav { display: flex; gap: 6px; align-items: center; }
+.tour-nav span { flex: 1; }
+.history-pop { position: fixed; z-index: 30; width: 300px; max-height: 70vh; overflow: auto; padding: 6px; }
+.history-pop button { display: flex; flex-direction: row; gap: 10px; align-items: center; width: 100%; text-align: left; background: none; border: 1px solid transparent; border-radius: 6px; padding: 4px; cursor: pointer; }
+.history-pop button:hover, .history-pop button:focus-visible { border-color: var(--accent); }
+.history-pop img, .history-pop .noimg { width: 72px; height: 54px; object-fit: cover; border-radius: 4px; background: var(--panel-2); flex: none; }
+.history-pop small { display: block; color: var(--muted); font-size: 11px; }
+.history-pop .current { border-color: var(--line); }
+.skip { position: absolute; left: 8px; top: -40px; z-index: 60; background: var(--accent); color: var(--accent-ink); padding: 6px 10px; border-radius: 6px; }
+.skip:focus { top: 8px; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.viewport canvas:focus-visible { outline-offset: -2px; }
+.tabs { display: none; }
+@media (max-width: 1000px) {
+  .tabs { display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; background: var(--panel); border-top: 1px solid var(--line); }
+  .tabs button { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 0 10px; background: none; border: 0; color: var(--muted); font-size: 11px; }
+  .tabs button[aria-pressed=true] { color: var(--accent); }
+  body { padding-bottom: 58px; }
+  .layout { grid-template-rows: auto; }
+  body[data-tab=view] .panel { display: none; }
+  body[data-tab=view] .viewport { height: calc(100dvh - 120px); }
+  body[data-tab=controls] .panel.right, body[data-tab=metrics] .panel.left { display: none; }
+  body[data-tab=controls] .viewport, body[data-tab=metrics] .viewport { height: 38vh; }
+  .presets label, .brand em { display: none; }
+  .topbar { gap: 8px; }
+  .actions { gap: 4px; overflow-x: auto; flex-wrap: nowrap; max-width: 100%; }
+  .actions .group { flex: none; }
+  .hud.tr { width: 170px; }
+}
+@media (prefers-reduced-motion: reduce) { .tour-hole, .tour-card { transition: none; } }

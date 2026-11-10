@@ -4,6 +4,56 @@
 const TAU = Math.PI * 2;
 const { sin, cos, sqrt, max, min, abs, floor } = Math;
 
+// Treillis de poutres (point 7) : distance au squelette, ramenee par symetrie dans le huitieme
+// de cellule [0 ; 0,5]^3 (les reseaux cubiques sont symetriques par rapport aux plans x = 0 et x = 0,5).
+// Les poutres sont donnees dans ce huitieme ; le seuil de porosite donne alors leur rayon.
+function segDist(px, py, pz, a, b) {
+  const dx = b[0] - a[0], dy = b[1] - a[1], dz = b[2] - a[2];
+  const t = Math.max(0, Math.min(1, ((px - a[0]) * dx + (py - a[1]) * dy + (pz - a[2]) * dz) / (dx * dx + dy * dy + dz * dz)));
+  return Math.hypot(px - a[0] - t * dx, py - a[1] - t * dy, pz - a[2] - t * dz);
+}
+const fold = (v) => { const p = v / TAU; return Math.abs(p - Math.round(p)); };
+function latticeFn(segs) {
+  return (x, y, z) => {
+    const px = fold(x), py = fold(y), pz = fold(z);
+    let d = Infinity;
+    for (const [a, b] of segs) d = Math.min(d, segDist(px, py, pz, a, b));
+    return d * TAU; // meme echelle que k * distance en mm
+  };
+}
+const O = [0, 0, 0], H = 0.5;
+export const LATTICES = {
+  cubic: [[O, [H, 0, 0]], [O, [0, H, 0]], [O, [0, 0, H]]],
+  bcc: [[O, [H, H, H]]],
+  fcc: [[O, [H, H, 0]], [O, [H, 0, H]], [O, [0, H, H]]],
+  octet: [[O, [H, H, 0]], [O, [H, 0, H]], [O, [0, H, H]], [[H, H, 0], [H, 0, H]], [[H, H, 0], [0, H, H]], [[H, 0, H], [0, H, H]]],
+};
+
+// Mousse de Voronoi periodique (point 8), proche de l'os trabeculaire : les poutres sont les aretes
+// ou trois cellules se rencontrent, reperees par F3 - F1 (distances au 1er et au 3e germe).
+const VORONOI_SEEDS = (() => {
+  let a = 12345;
+  const r = () => { a = (a * 16807) % 2147483647; return a / 2147483647; };
+  const pts = [];
+  // 8 germes sur une grille 2 x 2 x 2 perturbee : cellules de taille reguliere, aspect aleatoire.
+  for (let i = 0; i < 2; i++) for (let j = 0; j < 2; j++) for (let k = 0; k < 2; k++) {
+    pts.push([(i + 0.5 + (r() - 0.5) * 0.7) / 2, (j + 0.5 + (r() - 0.5) * 0.7) / 2, (k + 0.5 + (r() - 0.5) * 0.7) / 2]);
+  }
+  return pts;
+})();
+function voronoiFn(x, y, z) {
+  const px = x / TAU, py = y / TAU, pz = z / TAU;
+  let f1 = Infinity, f2 = Infinity, f3 = Infinity;
+  for (const s of VORONOI_SEEDS) {
+    // image periodique la plus proche du germe (huit germes par cellule : elle suffit)
+    let dx = px - s[0], dy = py - s[1], dz = pz - s[2];
+    dx -= Math.round(dx); dy -= Math.round(dy); dz -= Math.round(dz);
+    const d = Math.hypot(dx, dy, dz);
+    if (d < f1) { f3 = f2; f2 = f1; f1 = d; } else if (d < f2) { f3 = f2; f2 = d; } else if (d < f3) f3 = d;
+  }
+  return (f3 - f1) * TAU;
+}
+
 export const SURFACES = {
   gyroid: { label: 'Gyroïde', f: (x, y, z) => sin(x) * cos(y) + sin(y) * cos(z) + sin(z) * cos(x) },
   diamond: {
@@ -44,7 +94,15 @@ export const SURFACES = {
     f: (x, y, z) => 0.5 * (sin(2 * x) * cos(y) * sin(z) + sin(2 * y) * cos(z) * sin(x) + sin(2 * z) * cos(x) * sin(y))
       - 0.5 * (cos(2 * x) * cos(2 * y) + cos(2 * y) * cos(2 * z) + cos(2 * z) * cos(2 * x)) + 0.15,
   },
+  cubicLattice: { label: 'Treillis cubique', f: latticeFn(LATTICES.cubic), strut: true },
+  bcc: { label: 'Treillis BCC', f: latticeFn(LATTICES.bcc), strut: true },
+  fcc: { label: 'Treillis FCC', f: latticeFn(LATTICES.fcc), strut: true },
+  octet: { label: 'Treillis octet', f: latticeFn(LATTICES.octet), strut: true },
+  voronoi: { label: 'Voronoï (trabéculaire)', f: voronoiFn, strut: true },
 };
+
+// Les treillis de poutres n'ont pas de version feuillet : le mode est ignore.
+export const effectiveMode = (type, mode) => (SURFACES[type] && SURFACES[type].strut ? 'network' : mode);
 
 export const MODES = { network: 'Réseau (struts)', sheet: 'Feuillet (paroi)' };
 
@@ -61,23 +119,70 @@ export const GRADIENTS = {
   radial: 'Radial',
   spherical: 'Sphérique',
   surface: 'Depuis la surface',
+  profile: 'Profil multipoint selon la hauteur',
+  image: 'Carte de densité (image)',
 };
+
+// Profil multipoint : texte "0:80, 0.5:55, 1:80" (hauteur relative : porosite en %) (point 15).
+export function parseProfile(text) {
+  const pts = String(text || '').split(/[;,\n]+/).map((p) => p.split(':').map((v) => Number(v.trim().replace(/%$/, ''))))
+    .filter((p) => p.length === 2 && Number.isFinite(p[0]) && Number.isFinite(p[1]))
+    .map(([z, ph]) => [Math.min(1, Math.max(0, z)), Math.min(0.95, Math.max(0.2, ph > 1 ? ph / 100 : ph))])
+    .sort((a, b) => a[0] - b[0]);
+  return pts;
+}
+function profileAt(pts, u) {
+  if (!pts.length) return null;
+  if (u <= pts[0][0]) return pts[0][1];
+  for (let i = 1; i < pts.length; i++) if (u <= pts[i][0]) {
+    const [z0, p0] = pts[i - 1], [z1, p1] = pts[i];
+    return p0 + ((p1 - p0) * (u - z0)) / Math.max(z1 - z0, 1e-9);
+  }
+  return pts[pts.length - 1][1];
+}
+// Carte de densite : image en niveaux de gris projetee sur le plan XY, blanc = porosite finale (point 14).
+function imageAt(map, u, v) {
+  if (!map || !map.data) return 0;
+  const { w, h, data } = map;
+  const fx = Math.min(Math.max(u, 0), 1) * (w - 1), fy = Math.min(Math.max(1 - v, 0), 1) * (h - 1);
+  const i = Math.min(floor(fx), w - 2), j = Math.min(floor(fy), h - 2), tx = fx - i, ty = fy - j;
+  const a = data[i + j * w], b = data[i + 1 + j * w], c = data[i + (j + 1) * w], d = data[i + 1 + (j + 1) * w];
+  return ((a * (1 - tx) + b * tx) * (1 - ty) + (c * (1 - tx) + d * tx) * ty) / 255;
+}
+
+// Formes ajoutees (pleines) ou retirees (vides) : operations booleennes (point 17).
+export const BOOLEAN_KINDS = { box: 'Pavé', cylinder: 'Cylindre selon z', sphere: 'Sphère' };
+export function primitiveSdf(b) {
+  const [cx, cy, cz] = b.c, [a, bb, c] = b.s;
+  if (b.kind === 'sphere') return (x, y, z) => Math.hypot(x - cx, y - cy, z - cz) - a / 2;
+  if (b.kind === 'cylinder') return (x, y, z) => max(Math.hypot(x - cx, y - cy) - a / 2, abs(z - cz) - c / 2);
+  return (x, y, z) => {
+    const qx = abs(x - cx) - a / 2, qy = abs(y - cy) - bb / 2, qz = abs(z - cz) - c / 2;
+    return Math.hypot(max(qx, 0), max(qy, 0), max(qz, 0)) + min(max(qx, qy, qz), 0);
+  };
+}
 
 // Table de quantiles : pour une porosite donnee, seuil t tel que la fraction solide
 // d'une cellule unite vaille exactement 1 - porosite.
 const quantileCache = new Map();
 export function quantileTable(type, mode, n = 40) {
+  mode = effectiveMode(type, mode);
   const key = `${type}|${mode}|${n}`;
   if (quantileCache.has(key)) return quantileCache.get(key);
   const f = SURFACES[type].f;
+  // Les poutres alignees sur les plans de la grille creent un repliement : on decale chaque
+  // echantillon d'une quantite quasi aleatoire (suite R3) pour les treillis.
+  const jit = !!SURFACES[type].strut;
+  const fr = (v) => v - floor(v);
   const vals = new Float32Array(n * n * n);
   let k = 0;
   for (let i = 0; i < n; i++) {
-    const x = ((i + 0.5) / n) * TAU;
     for (let j = 0; j < n; j++) {
-      const y = ((j + 0.5) / n) * TAU;
       for (let l = 0; l < n; l++) {
-        const z = ((l + 0.5) / n) * TAU;
+        const q = k + 1;
+        const x = ((i + (jit ? fr(q * 0.8191725134) : 0.5)) / n) * TAU;
+        const y = ((j + (jit ? fr(q * 0.6710436067) : 0.5)) / n) * TAU;
+        const z = ((l + (jit ? fr(q * 0.5497004779) : 0.5)) / n) * TAU;
         const g = f(x, y, z);
         vals[k++] = mode === 'sheet' ? abs(g) : g;
       }
@@ -204,6 +309,8 @@ export function gradientT(params, x, y, z, sdf) {
       const d = sdf ? -sdf(x, y, z) : D;
       return 1 - min(1, max(0, d / D));
     }
+    case 'profile': return min(1, max(0, z / Z));
+    case 'image': return imageAt(g.map, x / X, y / Y);
     default: return 0;
   }
 }
@@ -211,8 +318,15 @@ export function gradientT(params, x, y, z, sdf) {
 export function porosityAt(params, x, y, z, sdf) {
   const g = params.gradient || { kind: 'none' };
   if (g.kind === 'none') return params.porosity;
+  if (g.kind === 'profile') {
+    const p = profileAt(g.pts || parseProfile(g.profile), z / specimenBox(params.shape)[2]);
+    return p == null ? params.porosity : p;
+  }
   return params.porosity + (g.p1 - params.porosity) * gradientT(params, x, y, z, sdf);
 }
+
+// Ecart interquantile d'une table : normalise deux surfaces avant de les melanger.
+function spread(table) { return table[floor(table.length * 0.9)] - table[floor(table.length * 0.1)] || 1; }
 
 export function rotationMatrix(rot) {
   const rx = ((rot && rot.x) || 0) * Math.PI / 180, ry = ((rot && rot.y) || 0) * Math.PI / 180, rz = ((rot && rot.z) || 0) * Math.PI / 180;
@@ -228,14 +342,24 @@ export function rotationMatrix(rot) {
 // Fonction champ complete (mm -> valeur), solide si < 0.
 export function makeFieldFn(params) {
   const f = SURFACES[params.type].f;
-  const sheet = params.mode === 'sheet';
+  const sheet = effectiveMode(params.type, params.mode) === 'sheet';
   const table = quantileTable(params.type, params.mode);
   const k = TAU / params.cell;
   const sdf = shapeSdf(params.shape);
   const skin = skinSdf(params.shape, params.skin);
   const g = params.gradient || { kind: 'none' };
   const graded = g.kind !== 'none';
-  const cellGraded = graded && g.c1 > 0 && abs(g.c1 - params.cell) > 1e-6;
+  const cellGraded = graded && g.kind !== 'profile' && g.c1 > 0 && abs(g.c1 - params.cell) > 1e-6;
+  const pts = g.kind === 'profile' ? parseProfile(g.profile) : null;
+  const gp = pts ? { ...params, gradient: { ...g, pts } } : params;
+  // Melange progressif vers une seconde surface selon le gradient (point 6).
+  const bl = params.blend && params.blend.type && params.blend.type !== 'none' && params.blend.type !== params.type && SURFACES[params.blend.type] ? params.blend.type : null;
+  const blended = graded && bl;
+  const f2 = blended ? SURFACES[bl].f : null;
+  const sheet2 = blended && effectiveMode(bl, params.mode) === 'sheet';
+  const table2 = blended ? quantileTable(bl, params.mode) : null;
+  const s1 = blended ? spread(table) : 1, s2 = blended ? spread(table2) : 1;
+  const bools = (params.booleans || []).filter((b) => b && b.op !== 'none').map((b) => ({ op: b.op, d: primitiveSdf(b) }));
   const t0 = thresholdFor(table, params.porosity);
   const an = params.aniso || { x: 1, y: 1, z: 1 };
   const ax = an.x || 1, ay = an.y || 1, az = an.z || 1;
@@ -250,23 +374,33 @@ export function makeFieldFn(params) {
         const a = R[0] * u + R[3] * v + R[6] * w, b = R[1] * u + R[4] * v + R[7] * w, c = R[2] * u + R[5] * v + R[8] * w;
         u = a; v = b; w = c;
       }
-      let kk = k, t = t0;
+      let kk = k, t = t0, gt = 0, ph = params.porosity;
       if (graded) {
-        const gt = gradientT(params, x, y, z, sdf);
-        t = thresholdFor(table, params.porosity + (g.p1 - params.porosity) * gt);
+        gt = gradientT(params, x, y, z, sdf);
+        ph = porosityAt(gp, x, y, z, sdf);
+        t = thresholdFor(table, ph);
         if (cellGraded) kk = TAU / (params.cell + (g.c1 - params.cell) * gt);
       }
-      const gv = f((u + cx) * kk / ax, (v + cy) * kk / ay, (w + cz) * kk / az);
-      return (sheet ? abs(gv) : gv) - t;
+      const X0 = (u + cx) * kk / ax, Y0 = (v + cy) * kk / ay, Z0 = (w + cz) * kk / az;
+      const gv = f(X0, Y0, Z0);
+      const a = (sheet ? abs(gv) : gv) - t;
+      if (!blended || gt <= 0) return a;
+      const gv2 = f2(X0, Y0, Z0);
+      const b = (sheet2 ? abs(gv2) : gv2) - thresholdFor(table2, ph);
+      if (gt >= 1) return b * (s1 / s2);
+      return (1 - gt) * a + gt * b * (s1 / s2);
     },
     sdf,
     skin,
     k,
-    value(x, y, z) {
-      const d = sdf(x, y, z);
-      let s = this.tpms(x, y, z);
+    // Combine le reseau, la peau, les formes booleennes et la piece (solide si negatif).
+    combine(s, x, y, z, d) {
       if (skin) s = min(s, skin(x, y, z) * k);
+      for (const b of bools) s = b.op === 'add' ? min(s, b.d(x, y, z) * k) : max(s, -b.d(x, y, z) * k);
       return max(s, d * k);
+    },
+    value(x, y, z) {
+      return this.combine(this.tpms(x, y, z), x, y, z, sdf(x, y, z));
     },
   };
 }
@@ -306,9 +440,7 @@ export function buildField(params) {
         const d = fn.sdf(x, y, z);
         sdfv[idx] = d;
         inside[idx] = d <= 0 ? 1 : 0;
-        let s = fn.tpms(x, y, z);
-        if (fn.skin) s = min(s, fn.skin(x, y, z) * fn.k);
-        data[idx] = max(s, d * fn.k);
+        data[idx] = fn.combine(fn.tpms(x, y, z), x, y, z, d);
         idx++;
       }
     }

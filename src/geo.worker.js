@@ -3,7 +3,7 @@ import { toAbaqus } from './exporters.js';
 import { materialOf } from './metrics.js';
 import { surfaceNets, taubin } from './mesher.js';
 import { computeMetrics, porosityForStrut, PROCESSES } from './metrics.js';
-import { zProfile, closedRegions, geometricTortuosity, percolationDiameter, intrusionCurve, vertexMaps } from './analysis.js';
+import { zProfile, closedRegions, removeIslands, geometricTortuosity, percolationDiameter, intrusionCurve, vertexMaps } from './analysis.js';
 
 let current = null;
 
@@ -31,6 +31,7 @@ self.onmessage = (e) => {
     const t0 = performance.now();
     self.postMessage({ id, stage: 'Échantillonnage du champ' });
     const field = buildField(params);
+    const removed = params.clean === false ? 0 : removeIslands(field);
     self.postMessage({ id, stage: 'Maillage de la surface' });
     const mesh = surfaceNets(field);
     if (params.smooth > 0) {
@@ -43,6 +44,7 @@ self.onmessage = (e) => {
     delete metrics._dt;
     metrics.timeMs = performance.now() - t0;
     metrics.res = field.res;
+    metrics.removedIslands = removed;
     metrics.capped = field.res !== params.res;
     const preview = !!e.data.preview;
     const keep = preview ? null : { positions: mesh.positions.slice(), normals: mesh.normals.slice(), indices: mesh.indices.slice() };

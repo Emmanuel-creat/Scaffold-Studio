@@ -43,10 +43,11 @@ export class History {
   push(state) {
     const s = History.snap(state);
     const last = this.past[this.past.length - 1];
-    if (last && JSON.stringify({ ...last, shape: { ...last.shape, sdfGrid: 0 } }) === JSON.stringify({ ...s, shape: { ...s.shape, sdfGrid: 0 } })) return;
+    if (last && JSON.stringify({ ...last, shape: { ...last.shape, sdfGrid: 0 } }) === JSON.stringify({ ...s, shape: { ...s.shape, sdfGrid: 0 } })) return null;
     this.past.push(s);
     if (this.past.length > this.limit) this.past.shift();
     this.future.length = 0;
+    return s;
   }
   undo(current) {
     if (!this.past.length) return null;

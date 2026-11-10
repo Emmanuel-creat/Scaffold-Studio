@@ -218,6 +218,7 @@ function analysisGroup(state, m, a) {
       <span>${t('Volumes de vide fermés')}</span><b>${a.closed.closedCount}${a.closed.closedCount ? ` · ${fmt(a.closed.closedVol, 3)} mm³` : ''}</b>
       <span>${t('Îlots solides détachés')}</span><b>${a.closed.islands}${a.closed.islands ? ` · ${fmt(a.closed.islandVol, 3)} mm³` : ''}</b>
     </div>
+    ${m.removedIslands ? `<p class="hint">${m.removedIslands} ${t('fragment(s) détaché(s) retiré(s) avant maillage')}</p>` : ''}
     ${a.closed.closedCount || a.closed.islands ? `<span class="flag ko">${t('Poudre piégée ou pièces flottantes à vérifier')}</span>` : `<span class="flag ok">${t('Aucun volume fermé ni îlot détaché')}</span>`}
     <details class="sub"><summary>${t('Porosimétrie simulée')}</summary>
       <div class="chart-box">${lineChart({ series: [{ pts: intr, cls: 'acc' }, { pts: intr, dots: true, cls: 'acc' }], xlabel: t('diamètre de la sonde (µm)'), ylabel: t('% du vide atteint'), xlog: true, ymin: 0, ymax: 100 })}</div>

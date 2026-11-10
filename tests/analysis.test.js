@@ -42,3 +42,19 @@ describe('analyses avancees', () => {
     console.log('epaisseur mediane', med.toFixed(3), 'strut', m.strut.mean.toFixed(3), 'H moyen', mp.meanCurvature.toFixed(3), 'concave', mp.concaveFraction.toFixed(2));
   });
 });
+
+describe('retrait des fragments detaches', () => {
+  it('garde le plus gros solide et vide les autres', async () => {
+    const { removeIslands, closedRegions } = await import('../src/analysis.js');
+    const nx = 12, ny = 12, nz = 12, N = nx * ny * nz;
+    const data = new Float32Array(N).fill(1);
+    const at = (i, j, k) => i + nx * (j + ny * k);
+    for (let i = 1; i < 7; i++) for (let j = 1; j < 7; j++) for (let k = 1; k < 7; k++) data[at(i, j, k)] = -1;
+    data[at(10, 10, 10)] = -1; data[at(10, 1, 10)] = -1;
+    const field = { data, inside: new Uint8Array(N).fill(1), nx, ny, nz, hx: 1, hy: 1, hz: 1 };
+    expect(closedRegions(field).islands).toBe(2);
+    expect(removeIslands(field)).toBe(2);
+    expect(closedRegions(field).islands).toBe(0);
+    expect(data[at(3, 3, 3)]).toBeLessThan(0);
+  });
+});

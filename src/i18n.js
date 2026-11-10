@@ -21,4 +21,5 @@ export function translatePage(root = document) {
   root.documentElement && (root.documentElement.lang = lang);
   root.querySelectorAll('[data-i18n]').forEach((n) => { n.textContent = t(n.dataset.i18n || n.textContent.trim()); });
   root.querySelectorAll('[data-i18n-title]').forEach((n) => { n.title = t(n.dataset.i18nTitle); });
+  root.querySelectorAll('[data-i18n-aria]').forEach((n) => { n.setAttribute('aria-label', t(n.dataset.i18nAria)); });
 }

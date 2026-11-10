@@ -1,5 +1,5 @@
 // Construction du panneau de parametres a partir d'une description declarative.
-import { SURFACES, MODES, SHAPES, GRADIENTS } from './tpms.js';
+import { SURFACES, MODES, SHAPES, GRADIENTS, BOOLEAN_KINDS } from './tpms.js';
 import { MATERIALS, PROCESSES } from './metrics.js';
 import { FLUIDS } from './bio.js';
 import { FORMATS, PATHS } from './studio.js';
@@ -86,10 +86,10 @@ export function buildControls(root, state, cb) {
     return el('label', { class: 'check', for: id }, input, label);
   };
 
-  const text = (id, label, path, onchange, placeholder = '') => {
+  const text = (id, label, path, onchange, placeholder = '', live = true) => {
     const input = el('input', { type: 'text', id, class: 'text', placeholder, maxlength: 90 });
     input.addEventListener('focus', () => beforeChange && beforeChange());
-    input.addEventListener('input', () => { set(state, path, input.value); onchange(); });
+    input.addEventListener(live ? 'input' : 'change', () => { set(state, path, input.value); onchange(); });
     refreshers.push(() => { if (document.activeElement !== input) input.value = get(state, path) || ''; });
     return el('label', { for: id, class: 'textfield' }, label, input);
   };
@@ -118,7 +118,10 @@ export function buildControls(root, state, cb) {
       radial: t('Du coeur vers la périphérie, comme l\'os spongieux vers l\'os cortical.'),
       spherical: t('Du centre de la pièce vers l\'extérieur.'),
       surface: t('Du coeur vers la surface, quelle que soit la forme : une coque dense autour d\'un coeur poreux.'),
+      profile: t('Porosité imposée à plusieurs hauteurs, interpolée entre les points.'),
+      image: t('Image en niveaux de gris posée sur la face XY : noir = porosité de base, blanc = porosité finale.'),
     }[state.gradient.kind];
+    if (state.gradient.kind === 'image') gradHint.textContent += ` ${state.gradient.map ? `${t('Image')} : ${state.gradient.map.name || ''}` : t('Aucune image chargée.')}`;
   });
 
   const flowBtn = el('button', { type: 'button', class: 'btn wide primary', id: 'btn-flow', onclick: onRunFlow });
@@ -131,7 +134,8 @@ export function buildControls(root, state, cb) {
   root.append(
     section('archi', t('Architecture'), true,
       field('type', t('Surface'), select('type', 'type', surfaces, geo)),
-      seg('mode', 'mode', Object.fromEntries(Object.entries(MODES).map(([k, v]) => [k, t(v)])), geo, t('Mode')),
+      showIf(seg('mode', 'mode', Object.fromEntries(Object.entries(MODES).map(([k, v]) => [k, t(v)])), geo, t('Mode')), () => !SURFACES[state.type].strut),
+      showIf(el('p', { class: 'hint' }, t('Treillis de poutres : la porosité visée fixe le diamètre des poutres.')), () => !!SURFACES[state.type].strut),
       slider('cell', t('Taille de cellule'), 'cell', { min: 0.4, max: 6, step: 0.05, unit: 'mm', digits: 2, tip: t('Période de la surface, une cellule unité par période') }, geo),
       slider('porosity', t('Porosité visée'), 'porosity', { min: 30, max: 95, step: 0.5, scale: 100, unit: '%', digits: 1, tip: t('Fraction de vide visée. Le seuil de la surface est calculé pour l\'atteindre exactement') }, geo),
       el('div', { class: 'inverse' },
@@ -142,6 +146,7 @@ export function buildControls(root, state, cb) {
           button('btn-inv-strut', t('Viser ce strut'), 'inverseStrut', 'btn'),
           button('btn-inv-e', t('Viser cette rigidité'), 'inverseE', 'btn'))),
       button('btn-fit', t('Ajuster aux cellules entières'), 'fit'),
+      check('clean', t('Retirer les fragments détachés'), 'clean', geo),
     ),
     section('orient', t('Orientation et anisotropie'), false,
       el('p', { class: 'hint' }, t('Étirer la cellule selon un axe imite l\'orientation des travées osseuses sous charge. La rotation oriente le réseau par rapport à l\'axe d\'impression.')),
@@ -160,11 +165,23 @@ export function buildControls(root, state, cb) {
         slider('skin', t('Peau pleine'), 'skin.t', { min: 0, max: 2, step: 0.05, unit: 'mm', digits: 2, tip: t('Coque pleine autour du réseau, 0 pour aucune') }, geo),
         seg('skin-faces', 'skin.faces', { lateral: t('Côtés'), all: t('Toutes les faces') }, geo, t('Faces de la peau'))), () => kind() !== 'cup'),
     ),
+    section('bool', t('Formes ajoutées ou retirées'), false,
+      el('p', { class: 'hint' }, t('Une plaque pleine pour la fixation, un canal de vascularisation, un logement de vis : la forme est ajoutée en plein ou retirée du réseau.')),
+      seg('bool-op', 'booleans.0.op', { none: t('Aucune'), add: t('Ajouter'), sub: t('Retirer') }, geo, t('Opération')),
+      showIf(el('div', { class: 'stack' },
+        field('bool-kind', t('Forme'), select('bool-kind', 'booleans.0.kind', BOOLEAN_KINDS, geo)),
+        el('div', { class: 'row3' }, num('bool-cx', t('Centre X'), 'booleans.0.c.0', geo, { min: -50, max: 200 }), num('bool-cy', t('Centre Y'), 'booleans.0.c.1', geo, { min: -50, max: 200 }), num('bool-cz', t('Centre Z'), 'booleans.0.c.2', geo, { min: -50, max: 200 })),
+        el('div', { class: 'row3' }, num('bool-sx', t('Taille X / Ø'), 'booleans.0.s.0', geo, { min: 0.1, max: 200 }), num('bool-sy', t('Taille Y'), 'booleans.0.s.1', geo, { min: 0.1, max: 200 }), num('bool-sz', t('Taille Z'), 'booleans.0.s.2', geo, { min: 0.1, max: 200 }))),
+      () => state.booleans[0].op !== 'none'),
+    ),
     section('grad', t('Gradients'), false,
       field('gradient', t('Type de gradient'), select('gradient', 'gradient.kind', Object.fromEntries(Object.entries(GRADIENTS).map(([k, v]) => [k, t(v)])), geo)),
       gradHint,
-      showIf(slider('grad-p1', t('Porosité finale'), 'gradient.p1', { min: 30, max: 95, step: 0.5, scale: 100, unit: '%', digits: 1 }, geo), () => state.gradient.kind !== 'none'),
-      showIf(slider('grad-c1', t('Cellule finale'), 'gradient.c1', { min: 0.4, max: 6, step: 0.05, unit: 'mm', digits: 2 }, geo), () => state.gradient.kind !== 'none'),
+      showIf(slider('grad-p1', t('Porosité finale'), 'gradient.p1', { min: 30, max: 95, step: 0.5, scale: 100, unit: '%', digits: 1 }, geo), () => state.gradient.kind !== 'none' && state.gradient.kind !== 'profile'),
+      showIf(slider('grad-c1', t('Cellule finale'), 'gradient.c1', { min: 0.4, max: 6, step: 0.05, unit: 'mm', digits: 2 }, geo), () => state.gradient.kind !== 'none' && state.gradient.kind !== 'profile'),
+      showIf(text('grad-profile', t('Points hauteur : porosité (%)'), 'gradient.profile', geo, '0:80, 0.5:55, 1:80', false), () => state.gradient.kind === 'profile'),
+      showIf(el('div', { class: 'stack' }, button('btn-grad-image', t('Charger une image de densité'), 'gradImage')), () => state.gradient.kind === 'image'),
+      showIf(field('blend', t('Surface d\'arrivée'), select('blend', 'blend.type', { none: t('Aucune (même surface)'), ...surfaces }, geo)), () => state.gradient.kind !== 'none'),
       showIf(slider('grad-depth', t('Profondeur de transition'), 'gradient.depth', { min: 0.2, max: 15, step: 0.1, unit: 'mm', digits: 1 }, geo), () => state.gradient.kind === 'surface'),
     ),
     section('mat', t('Matériau et fabrication'), true,
@@ -215,6 +232,7 @@ export function buildControls(root, state, cb) {
       check('showp', t('Afficher les particules'), 'view.particles', onView),
       check('layers', t('Aperçu des couches d\'impression'), 'view.layers', onView),
       check('plate', t('Plateau de fabrication'), 'view.plate', onView),
+      check('dims-3d', t('Cotes de la pièce'), 'view.dims', onView),
       check('theme', t('Thème clair'), 'view.light', onView),
     ),
     section('studio', t('Studio image et vidéo'), false,

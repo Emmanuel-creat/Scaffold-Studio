@@ -23,9 +23,10 @@ Ces compromis se calculent d'habitude dans plusieurs logiciels lourds (CAO, mail
 
 | Domaine | Ce que fait l'application |
 | --- | --- |
-| Géométrie | 9 surfaces TPMS (gyroïde, diamant, Schwarz P, I-WP, Neovius, Fischer-Koch S, F-RD, Split P, lidinoïde), mode réseau ou feuillet, anisotropie et rotation de la cellule, ajustement aux cellules entières |
+| Géométrie | 9 surfaces TPMS (gyroïde, diamant, Schwarz P, I-WP, Neovius, Fischer-Koch S, F-RD, Split P, lidinoïde), mode réseau ou feuillet, treillis de poutres (cubique, BCC, FCC, octet), mousse de Voronoï trabéculaire, transition progressive entre deux surfaces, anisotropie et rotation de la cellule, ajustement aux cellules entières, retrait automatique des fragments détachés |
 | Forme de la pièce | Pavé, cylindre, cage intersomatique à angles arrondis, cupule acétabulaire, trou central de greffe, peau pleine, import d'une forme STL quelconque (défaut osseux segmenté, implant) |
-| Gradients | Axial, radial, sphérique ou depuis la surface (coque dense et coeur poreux), sur la porosité et la taille de cellule |
+| Gradients | Axial, radial, sphérique, depuis la surface (coque dense et coeur poreux), profil multipoint selon la hauteur, carte de densité tirée d'une image, sur la porosité et la taille de cellule |
+| Formes ajoutées ou retirées | Pavé, cylindre ou sphère ajouté en plein (plaque de fixation) ou retiré du réseau (canal, logement de vis) |
 | Design inverse | Porosité calculée pour obtenir une épaisseur de strut visée ou une rigidité visée |
 | Morphologie | Porosité mesurée, diamètre de pore et épaisseur de strut par sphère inscrite, surface spécifique, interconnectivité |
 | Mécanique | Module de Young et limite d'élasticité estimés (Gibson-Ashby) pour 10 matériaux et un matériau personnalisé, comparés aux plages de l'os, masse |
@@ -40,9 +41,10 @@ Ces compromis se calculent d'habitude dans plusieurs logiciels lourds (CAO, mail
 | Cisaillement | Carte de cisaillement pariétal, part de la surface dans la fenêtre cible, histogramme comparé à la plage de la littérature (0,05 à 25 mPa) |
 | Solveur | Calcul sur carte graphique (WebGPU) avec repli automatique sur le processeur, pression imposée sur l'éprouvette entière, milieu de culture, sérum ou sang (Carreau) |
 | Biologie | Oxygène dissous en perfusion et en culture statique (advection, diffusion, consommation de Michaelis-Menten aux parois), carte d'oxygène sur la surface, zones hypoxiques, ensemencement par perfusion animé avec efficacité et répartition en hauteur, croissance du tissu pilotée par la courbure jour par jour |
-| Visualisation | Coupe selon X, Y ou Z, transparence, rotation, mode vol à travers les pores, lignes de courant, thème clair |
+| Visualisation | Coupe selon X, Y ou Z, transparence, rotation, mode vol à travers les pores, lignes de courant, cotes de la pièce en 3D, thème clair |
 | Studio | Formats 1:1, 4:5, 9:16 et 16:9, rendu réaliste, profondeur de champ, titre et barre d'échelle incrustés, rendu 4K, séquences de caméra enregistrées (tour, grue, plongée, vues clés) |
-| Projet | Annuler et rétablir, enregistrement et ouverture d'un projet, lien partageable, aperçu rapide puis résolution finale, interface en français ou en anglais |
+| Projet | Annuler et rétablir, historique des versions en vignettes, enregistrement et ouverture d'un projet, lien partageable, aperçu rapide puis résolution finale, interface en français ou en anglais |
+| Confort | Palette de commandes (Ctrl+K) qui atteint chaque réglage au clavier, visite guidée au premier lancement, onglets Vue, Réglages et Mesures sur téléphone, navigation au clavier, lecteur d'écran, mouvement réduit respecté |
 | Exports | STL et 3MF pour l'impression, VTK surface avec les cartes (ParaView), maillage voxel Abaqus avec essai de compression, champ de vitesse VTK, mesures CSV, rapport de conception HTML imprimable en PDF, capture PNG, vidéo MP4 ou WebM |
 
 ![Carte de cisaillement en coupe](docs/captures/02-cisaillement-coupe.png)
@@ -99,6 +101,7 @@ npm run build     # version de production dans dist/
 | Échap | Quitter le mode vol |
 | Ctrl+Z, Ctrl+Y | Annuler, rétablir |
 | Ctrl+S | Enregistrer le projet |
+| Ctrl+K ou / | Chercher une commande ou un réglage |
 
 ## Tourner une vidéo
 
@@ -122,6 +125,8 @@ Le studio image et vidéo prépare directement un post LinkedIn :
 Les méthodes sont détaillées dans le [cahier des charges](docs/CAHIER_DES_CHARGES.md). En résumé :
 
 - **Géométrie :** le seuil de chaque surface est calculé par quantile sur une cellule unité pour atteindre exactement la porosité visée, puis l'isosurface est maillée par surface nets (maillage fermé et orienté).
+- **Treillis et Voronoï :** le champ est la distance aux poutres de la cellule (repliée par symétrie dans un octant), le diamètre des poutres découle du seuil de porosité ; la mousse de Voronoï utilise l'écart F3 − F1 entre le premier et le troisième germe le plus proche (il s'annule le long des arêtes, où trois cellules se touchent) sur huit germes perturbés par cellule. Le seuil est calculé sur un échantillonnage décalé pour éviter le repliement de spectre sur les poutres fines.
+- **Formes et transitions :** union et différence de fonctions distance (minimum et maximum), mélange normalisé de deux surfaces selon le paramètre du gradient.
 - **Morphologie :** transformée de distance euclidienne exacte (Felzenszwalb et Huttenlocher), diamètres pris aux maxima locaux.
 - **Mécanique :** loi de Gibson-Ashby, E = C · Es · ρ*ⁿ avec n = 2 en réseau et 1,5 en feuillet.
 - **Éléments finis :** hexaèdres à 8 noeuds sur la cellule voxelisée (24³), conditions périodiques, six déformations unitaires, gradient conjugué préconditionné sans matrice assemblée. Le tenseur effectif donne les modules d'ingénierie ; la superposition des six cas donne la contrainte de von Mises pour une compression selon z. Quatre porosités supplémentaires fournissent l'ajustement E*/Es = C · ρⁿ.
@@ -152,6 +157,8 @@ Tests automatiques :
 | Éléments finis sur stratifié de plaques | module égal à la fraction solide (borne de Voigt exacte) |
 | Ajustement de Gibson-Ashby | coefficients retrouvés sur une loi puissance connue |
 | Analyses | profil de porosité, absence de volume fermé sur un gyroïde, tortuosité, passage plus petit que le pore moyen, épaisseur locale cohérente avec le strut |
+| Treillis et Voronoï | porosité visée atteinte à 4 points près, poutres BCC au bon endroit, transition gyroïde vers BCC, formes ajoutées et retirées, profil et carte de densité |
+| Fragments détachés | le plus gros solide est conservé, les fragments sont vidés |
 | Volume du maillage par rapport à la porosité visée | écart inférieur à 3 points sur les 10 combinaisons surface et mode |
 | Transformée de distance | distances exactes sur un cas de référence |
 | Interconnectivité d'un gyroïde | 100 % |
@@ -185,6 +192,7 @@ src/
   report.js        rapport de conception HTML
   studio.js        formats, post-traitement, titres, rendu 4K, séquences de caméra
   project.js       projet, lien partageable, historique
+  ux.js            palette de commandes, visite guidée, historique en vignettes
   i18n.js          traduction français et anglais
 tests/             tests unitaires (Vitest)
 ```

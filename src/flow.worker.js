@@ -14,7 +14,7 @@ export function flowDomain(params, { cellRes = 32, domainRes = 48 } = {}) {
   const an = params.aniso || { x: 1, y: 1, z: 1 };
   const pressure = params.flow && params.flow.bc === 'pressure';
   const periodic = !pressure && g.kind === 'none' && params.shape.kind === 'cube' && !(params.skin && params.skin.t > 0)
-    && !(params.shape.hole > 0) && !rot.x && !rot.y && !rot.z;
+    && !(params.shape.hole > 0) && !rot.x && !rot.y && !rot.z && !(params.booleans || []).some((b) => b && b.op && b.op !== 'none');
   if (periodic) {
     const size = [params.cell * (an.x || 1), params.cell * (an.y || 1), params.cell * (an.z || 1)];
     const m = Math.max(...size);

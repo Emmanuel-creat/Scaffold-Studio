@@ -17,6 +17,7 @@ import { buildReport } from './report.js';
 import { History, serialize, deserialize, encodeHash, decodeHash } from './project.js';
 import { t, getLang, setLang, translatePage } from './i18n.js';
 import { turbo } from './format.js';
+import { createPalette, controlCommands, createTour, describeState } from './ux.js';
 
 const RES = { low: 70, mid: 110, high: 160 };
 const PREVIEW_RES = 48;
@@ -44,7 +45,10 @@ function initialState() {
   try { const saved = sessionStorage.getItem('ss-state'); if (saved) return deserialize(JSON.parse(saved)); } catch { /* ignore */ }
   return applyPreset('default');
 }
+const sharedLink = location.hash.length > 1;
 const state = initialState();
+// Mouvement reduit demande par le systeme : pas de rotation automatique au depart.
+if (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) state.view.autoRotate = false;
 const history = new History();
 const app = {
   metrics: null, flow: null, flowStatus: { state: 'idle' }, wss: null,
@@ -204,6 +208,7 @@ function onGeoMessage(e) {
   updateDims();
   frameCamera(firstGeo);
   firstGeo = false;
+  maybeStartTour();
   if (d.preview) {
     busy(true, t('Aperçu affiché, calcul en résolution finale'));
     geoWorker.postMessage({ id: geoId, params: geoParams(), preview: false });
@@ -615,10 +620,55 @@ function drawPlate() {
   }
 }
 
+// Cotes de la piece : trois lignes de cote avec leur longueur (point 19).
+const dimsGroup = new THREE.Group();
+scene.add(dimsGroup);
+let dimsKey = '';
+function labelSprite(text, size) {
+  const c = document.createElement('canvas'); c.width = 256; c.height = 64;
+  const g = c.getContext('2d');
+  g.font = '600 34px "Segoe UI", system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  const light = !!state.view.light;
+  g.fillStyle = light ? 'rgba(255,255,255,.85)' : 'rgba(13,16,22,.75)';
+  const w = g.measureText(text).width + 28;
+  g.beginPath(); g.roundRect((256 - w) / 2, 8, w, 48, 10); g.fill();
+  g.fillStyle = light ? '#18202b' : '#e6e9ef'; g.fillText(text, 128, 33);
+  const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true }));
+  sp.scale.set(size * 4, size, 1);
+  sp.renderOrder = 20;
+  return sp;
+}
+function drawDims() {
+  const [X, Y, Z] = specimenBox(state.shape);
+  const key = `${state.view.dims}|${X}|${Y}|${Z}|${state.view.light}|${state.shape.kind}`;
+  if (key === dimsKey) return;
+  dimsKey = key;
+  for (const o of [...dimsGroup.children]) { dimsGroup.remove(o); o.geometry && o.geometry.dispose(); o.material.map && o.material.map.dispose(); o.material.dispose(); }
+  if (!state.view.dims) return;
+  const L = Math.max(X, Y, Z), off = L * 0.08, tick = L * 0.025;
+  const v = [];
+  const seg = (a, b) => v.push(...a, ...b);
+  // X le long de y = -off, Y le long de x = X + off, Z sur l'arete x = -off, y = -off
+  seg([0, -off, 0], [X, -off, 0]); seg([0, -off - tick, 0], [0, -off + tick, 0]); seg([X, -off - tick, 0], [X, -off + tick, 0]);
+  seg([X + off, 0, 0], [X + off, Y, 0]); seg([X + off - tick, 0, 0], [X + off + tick, 0, 0]); seg([X + off - tick, Y, 0], [X + off + tick, Y, 0]);
+  seg([-off, -off, 0], [-off, -off, Z]); seg([-off - tick, -off, 0], [-off + tick, -off, 0]); seg([-off - tick, -off, Z], [-off + tick, -off, Z]);
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(v, 3));
+  dimsGroup.add(new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: state.view.light ? 0x1f9e8a : 0x78d6c6, depthTest: false, transparent: true })));
+  const f = (n) => `${n.toLocaleString('fr-FR', { maximumFractionDigits: 2 })} mm`;
+  const round = state.shape.kind === 'cylinder' || state.shape.kind === 'cup';
+  const s1 = labelSprite(round ? `Ø ${f(X)}` : f(X), L * 0.05); s1.position.set(X / 2, -off * 1.9, 0);
+  const s3 = labelSprite(f(Z), L * 0.05); s3.position.set(-off * 1.9, -off * 1.9, Z / 2);
+  dimsGroup.add(s1, s3);
+  if (!round) { const s2 = labelSprite(f(Y), L * 0.05); s2.position.set(X + off * 1.9, Y / 2, 0); dimsGroup.add(s2); }
+}
+
 function applyView() {
   applyLook();
   drawLayer();
   drawPlate();
+  drawDims();
   const box = specimenBox(state.shape);
   if (state.view.layers && state.view.cutAxis !== 'z') { state.view.cutAxis = 'z'; ctl && ctl.refresh(); }
   const ax = AXES[state.view.cutAxis || 'x'];
@@ -881,8 +931,11 @@ document.getElementById('btn-fly').onclick = () => (app.fly ? exitFly() : enterF
 document.getElementById('btn-help').onclick = () => document.getElementById('help').showModal();
 
 window.addEventListener('keydown', (e) => {
-  if (e.target.matches('input[type=number], input[type=text], select, textarea')) return;
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); palette.open(); return; }
+  if (e.target.matches('input[type=number], input[type=text], input[type=search], select, textarea')) return;
+  if (document.querySelector('dialog[open]') || !tour.el.hidden) return;
   const k = e.key.toLowerCase();
+  if (k === '/') { e.preventDefault(); palette.open(); return; }
   if (k === 'h' && !e.ctrlKey) document.body.classList.toggle('capture');
   else if (k === 'f' && !e.ctrlKey && !e.metaKey) (app.fly ? exitFly() : enterFly());
   else if (k === 'escape') { stopShot(); exitFly(); document.body.classList.remove('capture'); }
@@ -968,8 +1021,21 @@ document.getElementById('metrics').addEventListener('click', (e) => {
 });
 
 // ---------- Historique et projet ----------
+// Vignette de la vue courante, gardee avec chaque etat de l'historique (point 77).
+const thumbs = new WeakMap();
+function thumbnail() {
+  try {
+    const c = document.createElement('canvas'); c.width = 144; c.height = 108;
+    const g = c.getContext('2d');
+    studio.render(focusDistance()); // le tampon WebGL n'est pas conserve entre deux images
+    const w = canvas.width, h = canvas.height, r = Math.min(w / 4, h / 3);
+    g.drawImage(canvas, (w - r * 4) / 2, (h - r * 3) / 2, r * 4, r * 3, 0, 0, 144, 108);
+    return c.toDataURL('image/jpeg', 0.7);
+  } catch { return null; }
+}
 function beforeChange() {
-  history.push(state);
+  const snap = history.push(state);
+  if (snap) thumbs.set(snap, thumbnail());
   updateHistoryButtons();
 }
 function restore(snap) {
@@ -987,6 +1053,98 @@ function updateHistoryButtons() {
 }
 document.getElementById('btn-undo').onclick = undo;
 document.getElementById('btn-redo').onclick = redo;
+
+const histPop = document.getElementById('history-pop');
+const histBtn = document.getElementById('btn-history');
+function showHistory() {
+  const items = history.past.map((s, i) => ({ s, i })).reverse().slice(0, 20);
+  const label = (s) => describeState(s, (k) => t(SURFACES[k].label));
+  histPop.innerHTML = `<button type="button" class="current" disabled><span class="noimg"></span><span>${label(state)}<small>${t('Version actuelle')}</small></span></button>`
+    + items.map(({ s, i }) => {
+      const img = thumbs.get(s);
+      return `<button type="button" role="menuitem" data-i="${i}">${img ? `<img src="${img}" alt="">` : '<span class="noimg"></span>'}<span>${label(s)}<small>${history.past.length - i} ${t('étape(s) en arrière')}</small></span></button>`;
+    }).join('') + (items.length ? '' : `<p class="hint">${t('Aucune modification pour l\'instant')}</p>`);
+  const r = histBtn.getBoundingClientRect();
+  Object.assign(histPop.style, { left: `${Math.max(8, Math.min(r.left, innerWidth - 310))}px`, top: `${r.bottom + 6}px` });
+  histPop.hidden = false;
+  histBtn.setAttribute('aria-expanded', 'true');
+  const first = histPop.querySelector('button[data-i]'); if (first) first.focus();
+}
+function hideHistory() { histPop.hidden = true; histBtn.setAttribute('aria-expanded', 'false'); }
+histBtn.onclick = (e) => { e.stopPropagation(); if (histPop.hidden) showHistory(); else hideHistory(); };
+histPop.addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-i]');
+  if (!b) return;
+  const target = Number(b.dataset.i);
+  // On remonte pas a pas pour que chaque version intermediaire reste dans le retablissement.
+  let s = null;
+  while (history.past.length > target) {
+    s = history.undo(state);
+    if (history.past.length > target) restoreQuiet(s);
+  }
+  if (s) { restore(s); status(t('Version restaurée')); }
+  hideHistory();
+});
+function restoreQuiet(s) { for (const k of Object.keys(state)) delete state[k]; Object.assign(state, s); }
+document.addEventListener('click', (e) => { if (!histPop.hidden && !histPop.contains(e.target) && e.target !== histBtn) hideHistory(); });
+histPop.addEventListener('keydown', (e) => { if (e.key === 'Escape') { hideHistory(); histBtn.focus(); } });
+
+// Palette de commandes (Ctrl+K) : actions et tous les reglages du panneau.
+const ACTIONS = () => [
+  { label: t('Lancer ou arrêter la perfusion'), key: 'Espace', keywords: 'flow lbm', run: onRunFlow },
+  { label: t('Éléments finis de la cellule'), keywords: 'fem rigidite', run: runFem },
+  { label: t('Calculer l\'oxygène'), keywords: 'o2 hypoxie', run: () => runBio('oxygen') },
+  { label: t('Ensemencer'), keywords: 'cellules seeding', run: () => runBio('seed') },
+  { label: t('Simuler la croissance du tissu'), keywords: 'tissu', run: () => runBio('tissue') },
+  { label: t('Rendu 4K (PNG)'), keywords: 'image photo', run: renderHiRes },
+  { label: t('Tourner la séquence'), keywords: 'video camera', run: () => (app.shot ? stopShot() : startShot()) },
+  { label: t('Capture d\'image'), key: 'P', run: snapshot },
+  { label: t('Enregistrer une vidéo'), key: 'R', run: toggleRecord },
+  { label: t('Mode vol'), key: 'F', run: () => (app.fly ? exitFly() : enterFly()) },
+  { label: t('Masquer l\'interface'), key: 'H', run: () => document.body.classList.toggle('capture') },
+  { label: t('Rapport de conception (HTML imprimable)'), run: () => document.getElementById('btn-report').click() },
+  { label: t('Exporter'), keywords: 'stl 3mf vtk abaqus', run: () => document.getElementById('btn-export').click() },
+  { label: t('Enregistrer le projet'), key: 'Ctrl+S', run: saveProject },
+  { label: t('Copier un lien vers ce projet'), run: () => document.getElementById('btn-link').click() },
+  { label: t('Annuler'), key: 'Ctrl+Z', run: undo },
+  { label: t('Rétablir'), key: 'Ctrl+Y', run: redo },
+  { label: t('Historique des versions'), run: showHistory },
+  { label: t('Visite guidée'), run: () => tour.start() },
+  { label: t('Thème clair'), run: () => { state.view.light = !state.view.light; ctl.refresh(); callbacks.onView(); } },
+  ...PRESETS.map((p) => ({ label: t(p.label), group: t('Modèle'), run: () => { presetSel.value = p.id; presetSel.onchange(); } })),
+].map((c) => ({ group: t('Action'), ...c }));
+const palette = createPalette(() => [...ACTIONS(), ...controlCommands(document.getElementById('controls'))]);
+document.getElementById('btn-palette').onclick = () => palette.open();
+
+// Visite guidee au premier lancement (point 76).
+const tour = createTour([
+  { sel: '#preset', title: t('Choisis un modèle'), text: t('Six cas réels pour démarrer : cage lombaire, cupule, os trabéculaire, défaut osseux. Tout reste modifiable.') },
+  { sel: '#sec-archi', title: t('Architecture'), text: t('Surface ou treillis, taille de cellule et porosité visée. La géométrie et les mesures se recalculent à chaque réglage.'), open: true },
+  { sel: '#sec-shape', title: t('Forme de la pièce'), text: t('Pavé, cylindre, cage, cupule ou ta propre forme STL, avec peau pleine et trou de greffe.'), open: true },
+  { sel: '#metrics', title: t('Mesures'), text: t('Porosité, pores, struts, rigidité comparés aux plages de l\'os, puis analyses avancées, fabrication et mécanique.') },
+  { sel: '#btn-flow', title: t('Perfusion'), text: t('Lance le calcul d\'écoulement : perméabilité, perte de charge, cisaillement sur les parois et particules du milieu de culture.'), open: true },
+  { sel: '#sec-studio', title: t('Studio image et vidéo'), text: t('Formats LinkedIn, rendu réaliste, titre incrusté, rendu 4K et séquences de caméra enregistrées.') },
+  { sel: '#btn-palette', title: t('Tout au clavier'), text: t('Ctrl+K ouvre la recherche de commandes et de réglages. L\'aide liste les autres raccourcis.') },
+], { onEnd: () => { try { localStorage.setItem('ss-tour', '1'); } catch { /* ignore */ } } });
+let tourChecked = false;
+// Premiere visite : la visite guidee demarre seule une fois la piece affichee.
+function maybeStartTour() {
+  if (tourChecked) return;
+  tourChecked = true;
+  let seen = '1';
+  try { seen = localStorage.getItem('ss-tour'); } catch { /* ignore */ }
+  if (!seen && !sharedLink && !navigator.webdriver) setTimeout(() => tour.start(), 600);
+}
+document.getElementById('btn-tour').onclick = () => { document.getElementById('help').close(); tour.start(); };
+
+// Onglets sur telephone (point 74).
+function setTab(tab) {
+  document.body.dataset.tab = tab;
+  for (const b of document.querySelectorAll('.tabs button')) b.setAttribute('aria-pressed', String(b.dataset.tab === tab));
+  setTimeout(resize, 0);
+}
+for (const b of document.querySelectorAll('.tabs button')) b.onclick = () => setTab(b.dataset.tab);
+document.body.dataset.tab = 'view';
 
 function saveSession() {
   // Un lien copie plus tot ne doit pas ecraser les changements suivants au rechargement.
@@ -1042,6 +1200,25 @@ if (getLang() === 'en') {
 }
 
 // ---------- Import STL ----------
+// Carte de densite : image ramenee a 48 x 48 niveaux de gris (point 14).
+const imgInput = Object.assign(document.createElement('input'), { type: 'file', accept: 'image/*', hidden: true });
+document.body.append(imgInput);
+imgInput.onchange = async () => {
+  const f = imgInput.files[0]; imgInput.value = '';
+  if (!f) return;
+  try {
+    const bmp = await createImageBitmap(f);
+    const n = 48, c = document.createElement('canvas'); c.width = c.height = n;
+    const g = c.getContext('2d'); g.drawImage(bmp, 0, 0, n, n);
+    const px = g.getImageData(0, 0, n, n).data;
+    const data = [];
+    for (let i = 0; i < n * n; i++) data.push(Math.round(0.2126 * px[i * 4] + 0.7152 * px[i * 4 + 1] + 0.0722 * px[i * 4 + 2]));
+    beforeChange();
+    state.gradient.map = { w: n, h: n, data, name: f.name };
+    ctl.refresh(); requestGeometry();
+    status(`${t('Carte de densité chargée')} : ${f.name}`);
+  } catch { status(t('Image illisible')); }
+};
 const stlInput = Object.assign(document.createElement('input'), { type: 'file', accept: '.stl', hidden: true });
 document.body.append(stlInput);
 stlInput.onchange = async () => {
@@ -1096,6 +1273,8 @@ function onAction(name) {
     runBio(name);
   } else if (name === 'replaySeed') {
     if (app.bio.seed) showSeeding(app.bio.seed);
+  } else if (name === 'gradImage') {
+    imgInput.click();
   } else if (name === 'hires') {
     renderHiRes();
   } else if (name === 'shot') {

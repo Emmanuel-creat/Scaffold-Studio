@@ -44,6 +44,22 @@ export function components(mask, nx, ny, nz) {
   return { label, sizes };
 }
 
+// Retire les fragments solides detaches du corps principal (bouts de poutres coupes au bord).
+// Ils tomberaient du plateau a l'impression ; on les passe en vide avant le maillage.
+export function removeIslands(field) {
+  const { data, nx, ny, nz } = field;
+  const N = nx * ny * nz;
+  const mask = new Uint8Array(N);
+  for (let p = 0; p < N; p++) mask[p] = data[p] < 0 ? 1 : 0;
+  const sc = components(mask, nx, ny, nz);
+  if (sc.sizes.length < 2) return 0;
+  let main = 0;
+  sc.sizes.forEach((s, i) => { if (s > sc.sizes[main]) main = i; });
+  const eps = Math.abs(data.reduce((m, v) => Math.max(m, Math.abs(v)), 0)) * 1e-3 || 1e-3;
+  for (let p = 0; p < N; p++) if (mask[p] && sc.label[p] !== main) data[p] = eps;
+  return sc.sizes.length - 1;
+}
+
 // Volumes fermes (poudre ou resine piegee) et ilots solides detaches (point 28).
 export function closedRegions(field) {
   const { data, inside, nx, ny, nz, hx, hy, hz } = field;

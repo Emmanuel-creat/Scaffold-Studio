@@ -25,12 +25,17 @@
     <symbol id="i-save" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M5 4h11l3 3v13H5z"/><path d="M8 4v5h7V4M8 20v-6h8v6"/></g></symbol>
     <symbol id="i-open" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M3 6h6l2 2h10v11H3z"/></g></symbol>
     <symbol id="i-link" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></g></symbol>
+    <symbol id="i-history" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12a8 8 0 1 0 2.4-5.7"/><path d="M4 4v4h4"/><path d="M12 8v4l3 2"/></g></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></g></symbol>
+    <symbol id="i-cube" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M4 7.5l8 4.5 8-4.5M12 12v9"/></g></symbol>
+    <symbol id="i-sliders" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></g></symbol>
+    <symbol id="i-chart" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M4 20h16"/><path d="M7 16v-5M12 16V6M17 16v-8"/></g></symbol>
     <symbol id="i-help" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.3-1 .8-1 1.5v.5"/><circle cx="12" cy="17" r=".6" fill="currentColor"/></g></symbol>
   </defs>
 </svg>
 
 <header class="topbar">
-  <div class="brand"><svg class="logo"><use href="#i-logo"/></svg><span>Scaffold Studio</span><em id="version">v1.5</em></div>
+  <div class="brand"><svg class="logo"><use href="#i-logo"/></svg><span>Scaffold Studio</span><em id="version">v1.6</em></div>
   <div class="presets">
     <label for="preset" data-i18n>Modèle</label>
     <select id="preset"></select>
@@ -39,6 +44,8 @@
     <div class="group">
       <button id="btn-undo" data-i18n-title="Annuler (Ctrl+Z)" title="Annuler (Ctrl+Z)" aria-label="Annuler"><svg><use href="#i-undo"/></svg></button>
       <button id="btn-redo" data-i18n-title="Rétablir (Ctrl+Y)" title="Rétablir (Ctrl+Y)" aria-label="Rétablir"><svg><use href="#i-redo"/></svg></button>
+      <button id="btn-history" data-i18n-title="Historique des versions" title="Historique des versions" aria-label="Historique" aria-haspopup="true" aria-expanded="false"><svg><use href="#i-history"/></svg></button>
+      <button id="btn-palette" data-i18n-title="Chercher une commande (Ctrl+K)" title="Chercher une commande (Ctrl+K)" aria-label="Chercher"><svg><use href="#i-search"/></svg></button>
     </div>
     <div class="group">
       <button id="btn-open" data-i18n-title="Ouvrir un projet" title="Ouvrir un projet" aria-label="Ouvrir"><svg><use href="#i-open"/></svg></button>
@@ -65,20 +72,27 @@
   </nav>
 </header>
 
+<a class="skip" href="#metrics" data-i18n>Aller aux mesures</a>
+<div id="history-pop" class="menu-list history-pop" hidden role="menu"></div>
 <div class="layout">
   <aside class="panel left" id="controls" aria-label="Paramètres"></aside>
   <main class="viewport" id="viewport">
-    <canvas id="view"></canvas>
+    <canvas id="view" role="img" aria-label="Vue 3D du scaffold" data-i18n-aria="Vue 3D du scaffold" tabindex="0"></canvas>
     <div class="hud tl" id="hud-dims"></div>
     <div class="hud tr" id="hud-legend" hidden></div>
-    <div class="hud bl" id="hud-status">Préparation…</div>
+    <div class="hud bl" id="hud-status" role="status" aria-live="polite">Préparation…</div>
     <div class="hud center" id="hud-busy" hidden><span class="spinner"></span><span id="busy-text">Calcul de la géométrie</span></div>
     <div class="hud bc" id="hud-rec" hidden><span class="dot"></span> Enregistrement <span id="rec-time">0:00</span> · R pour arrêter</div>
     <div class="hud br" id="hud-layer" hidden><canvas id="layer-canvas" width="200" height="200"></canvas><span id="layer-text"></span></div>
     <div class="hud fly" id="hud-fly" hidden><span id="fly-text">Vol dans les pores</span> · Échap pour sortir</div>
   </main>
-  <aside class="panel right" id="metrics" aria-label="Mesures"></aside>
+  <aside class="panel right" id="metrics" aria-label="Mesures" tabindex="-1"></aside>
 </div>
+<nav class="tabs" aria-label="Panneaux">
+  <button type="button" data-tab="view" aria-pressed="true"><svg><use href="#i-cube"/></svg><span data-i18n>Vue</span></button>
+  <button type="button" data-tab="controls" aria-pressed="false"><svg><use href="#i-sliders"/></svg><span data-i18n>Réglages</span></button>
+  <button type="button" data-tab="metrics" aria-pressed="false"><svg><use href="#i-chart"/></svg><span data-i18n>Mesures</span></button>
+</nav>
 
 <dialog id="help">
   <h2>Scaffold Studio</h2>
@@ -93,7 +107,9 @@
     <li><kbd>Échap</kbd> quitter le mode vol</li>
     <li><kbd>Ctrl</kbd><kbd>Z</kbd> annuler, <kbd>Ctrl</kbd><kbd>Y</kbd> rétablir</li>
     <li><kbd>Ctrl</kbd><kbd>S</kbd> enregistrer le projet</li>
+    <li><kbd>Ctrl</kbd><kbd>K</kbd> chercher une commande ou un réglage</li>
   </ul>
+  <p><button type="button" id="btn-tour" class="btn">Visite guidée</button></p>
   <h3>Méthodes</h3>
   <p>Géométrie : surfaces minimales triplement périodiques, seuil calculé pour atteindre la porosité visée, maillage par surface nets. Mesures : diamètre de pore et épaisseur de strut par sphère inscrite (transformée de distance exacte). Rigidité : loi de Gibson-Ashby. Perfusion : méthode de Boltzmann sur réseau D3Q19, perméabilité par la loi de Darcy, cisaillement pariétal estimé par le gradient de vitesse près de la paroi.</p>
   <p class="note">Les valeurs mécaniques et de cisaillement sont des estimations de conception, à confirmer par éléments finis et par essais.</p>

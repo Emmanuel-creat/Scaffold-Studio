@@ -1,5 +1,20 @@
 # Journal des versions
 
+## 1.6.0 (novembre 2026)
+
+Sixième vague : nouvelles architectures et confort d'utilisation.
+
+- Treillis de poutres cubique, BCC, FCC et octet, mousse de Voronoï trabéculaire.
+- Transition progressive d'une surface à une autre le long du gradient.
+- Gradient en profil multipoint selon la hauteur et carte de densité tirée d'une image.
+- Formes ajoutées en plein ou retirées du réseau : plaque de fixation, canal, logement de vis.
+- Retrait automatique des fragments solides détachés avant maillage.
+- Cotes de la pièce affichées en 3D.
+- Palette de commandes (Ctrl+K) qui atteint chaque réglage, visite guidée au premier lancement.
+- Historique des versions en vignettes, retour direct à une version.
+- Onglets Vue, Réglages et Mesures sur téléphone.
+- Accessibilité : lien d'évitement, focus visible, annonces d'état, rotation coupée si le mouvement réduit est demandé.
+
 ## 1.5.0 (novembre 2026)
 
 Cinquième vague : image et vidéo.
