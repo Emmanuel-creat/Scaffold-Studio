@@ -1,5 +1,17 @@
 # Journal des versions
 
+## 1.8.0 (novembre 2026)
+
+Huitième vague : science, documentation et diffusion.
+
+- Comparaison avec Castro et al. 2019 sur trois TPMS à 70 % de porosité (docs/VALIDATION.md, scripts/validation.mjs).
+- Références vérifiées avec DOI dans le rapport de conception et la page méthodes.
+- Page « Méthodes illustrées » interactive dans l'application.
+- README, méthodes et spécification en anglais.
+- Note technique, guide de travaux pratiques, plan de vidéo et post LinkedIn.
+- Jeu de données ouvert de 39 designs (morphologie, rigidité par éléments finis, perméabilité) et maillages STL régénérables.
+- Vérification de types TypeScript du coeur de calcul dans la CI, métadonnées Zenodo.
+
 ## 1.7.0 (novembre 2026)
 
 Septième vague : analyses, rendu et qualité logicielle.

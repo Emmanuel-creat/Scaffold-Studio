@@ -108,7 +108,7 @@ export function toVTKVelocity(flow) {
 
 // ---------- Abaqus : maillage voxel C3D8 et essai de compression (point 56) ----------
 // grid : { solid (Uint8Array), nx, ny, nz, h, origin } ; E en MPa.
-export function toAbaqus(grid, { E, nu = 0.3, name = 'SCAFFOLD', strain = 0.01 } = {}) {
+export function toAbaqus(grid, { E = undefined, nu = 0.3, name = 'SCAFFOLD', strain = 0.01 } = {}) {
   const { solid, nx, ny, nz, h, origin } = grid;
   const NX = nx + 1, NY = ny + 1;
   const nodeId = new Int32Array(NX * NY * (nz + 1));

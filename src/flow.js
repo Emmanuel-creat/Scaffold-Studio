@@ -7,6 +7,9 @@ export const MU = 0.75e-3; // viscosite du milieu de culture a 37 degres (Pa.s)
 
 export class FlowField {
   constructor(F, params) {
+    // champs fournis par le solveur (declares pour la verification de types)
+    /** @type {Float32Array} */ this.ux = F.ux; /** @type {Float32Array} */ this.uy = F.uy; /** @type {Float32Array} */ this.uz = F.uz;
+    /** @type {number} */ this.nx = F.nx; /** @type {number} */ this.ny = F.ny; /** @type {number} */ this.nz = F.nz; /** @type {number[]} */ this.size = F.size;
     Object.assign(this, F);
     this.params = params;
     this.box = specimenBox(params.shape);

@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scaffold Studio, méthodes illustrées</title>
+<link rel="icon" href="icon.svg">
+<style>
+:root { --bg: #0e1218; --panel: #161c25; --line: #283140; --text: #e6e9ef; --muted: #9aa4b2; --accent: #78d6c6; --warm: #e8a35c; }
+@media (prefers-color-scheme: light) { :root { --bg: #f6f7f9; --panel: #fff; --line: #dde2e8; --text: #1b222c; --muted: #5d6877; --accent: #1f8f7f; --warm: #b76a1f; } }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.6 "Segoe UI", system-ui, sans-serif; }
+main { max-width: 880px; margin: 0 auto; padding: 32px 16px 64px; }
+h1 { font-size: 26px; margin: 0 0 4px; } h2 { font-size: 18px; margin: 0 0 8px; }
+.lead { color: var(--muted); margin: 0 0 28px; }
+section { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 20px; margin: 0 0 20px; }
+.row { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; }
+@media (max-width: 720px) { .row { grid-template-columns: 1fr; } }
+canvas, svg { width: 100%; height: auto; display: block; border-radius: 8px; background: var(--bg); }
+label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 2px; }
+input[type=range] { width: 100%; accent-color: var(--accent); }
+.val { font: 600 13px ui-monospace, monospace; color: var(--text); float: right; }
+code, .eq { font: 13px ui-monospace, monospace; background: var(--bg); padding: 2px 6px; border-radius: 4px; }
+.eq { display: block; padding: 8px 10px; margin: 8px 0; }
+a { color: var(--accent); }
+small { color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+<h1>Méthodes illustrées</h1>
+<p class="lead">Les calculs de Scaffold Studio, en quatre figures à manipuler. Texte complet et références : <a href="https://github.com/Emmanuel-creat/Scaffold-Studio/blob/main/docs/METHODES.md">docs/METHODES.md</a>. Auteur : BAILLY emmanuel.</p>
+
+<section>
+<h2>1. Atteindre une porosité sans itérer</h2>
+<div class="row">
+<canvas id="tpms" width="360" height="360" aria-label="Coupe d'un gyroïde"></canvas>
+<div>
+<p>La coupe montre le champ du gyroïde <code>g = sin x cos y + sin y cos z + sin z cos x</code> à z fixé. Le solide est la zone où g est sous le seuil t.</p>
+<p>Le seuil est le quantile d'ordre (1 − porosité) des valeurs de g : on trie les valeurs échantillonnées et on lit directement la bonne.</p>
+<label>Porosité visée <span class="val" id="pv"></span></label><input id="por" type="range" min="30" max="90" value="70">
+<label>Hauteur de coupe <span class="val" id="zv"></span></label><input id="zc" type="range" min="0" max="100" value="20">
+<label><input id="sheet" type="checkbox"> Mode feuillet (|g| sous t)</label>
+<p><small>Porosité mesurée sur la coupe : <b id="pm"></b></small></p>
+</div>
+</div>
+</section>
+
+<section>
+<h2>2. Rigidité : loi de Gibson-Ashby</h2>
+<div class="row">
+<svg id="ga" viewBox="0 0 360 260" aria-label="Module en fonction de la densité relative"></svg>
+<div>
+<span class="eq">E* = C · Es · ρⁿ</span>
+<p>ρ est la densité relative (1 − porosité). En réseau, les poutres fléchissent : n vaut environ 2. En feuillet, les parois travaillent plus en membrane : n se rapproche de 1,5. Le calcul par éléments finis de l'application ajuste C et n pour chaque surface.</p>
+<label>Exposant n <span class="val" id="nv"></span></label><input id="n" type="range" min="10" max="30" value="20">
+<label>Coefficient C <span class="val" id="cv"></span></label><input id="c" type="range" min="20" max="120" value="100">
+<label>Matériau</label>
+<select id="mat"><option value="110">Ti-6Al-4V (110 GPa)</option><option value="186">Tantale (186 GPa)</option><option value="3.6">PEEK (3,6 GPa)</option><option value="0.4">PCL (0,4 GPa)</option></select>
+<p><small>Bandes : os spongieux (0,1 à 2 GPa) et cortical (7 à 30 GPa).</small></p>
+</div>
+</div>
+</section>
+
+<section>
+<h2>3. Perfusion : Boltzmann sur réseau D3Q19</h2>
+<div class="row">
+<svg id="d3q19" viewBox="-130 -120 260 240" aria-label="Les 19 vitesses du schéma D3Q19"></svg>
+<div>
+<p>Chaque noeud porte 19 populations de particules : une au repos, six vers les faces, douze vers les arêtes du cube. À chaque pas, elles se relaxent vers l'équilibre (collision), puis se déplacent vers le voisin (propagation).</p>
+<p>Sur une paroi, la population repart en sens inverse à mi-chemin (rebond). La collision à deux temps de relaxation, avec Λ = 3/16, place cette paroi au même endroit quelle que soit la viscosité : la perméabilité ne dépend plus d'un réglage numérique.</p>
+<span class="eq">k = ν · ⟨u⟩ / g  (loi de Darcy)</span>
+</div>
+</div>
+</section>
+
+<section>
+<h2>4. Croissance du tissu pilotée par la courbure</h2>
+<div class="row">
+<canvas id="grow" width="360" height="360" aria-label="Pore se remplissant de tissu"></canvas>
+<div>
+<p>Les cellules déposent la matrice plus vite là où la paroi est concave. Dans un pore de rayon R, un point à la distance d de la paroi est comblé au temps :</p>
+<span class="eq">t = d (2R − d) / (2λ)</span>
+<p>Dans un pore circulaire, le front reste circulaire et accélère en fin de remplissage, comme l'ont observé Rumpler (2008) et Bidan (2012) sur des canaux imprimés.</p>
+<label>Jour <span class="val" id="dv"></span></label><input id="day" type="range" min="0" max="60" value="14">
+<label>Vitesse de dépôt λ (µm/jour) <span class="val" id="lv"></span></label><input id="lam" type="range" min="1" max="10" value="3">
+<p><small>Pore de 0,8 mm comblé à <b id="gf"></b>.</small></p>
+</div>
+</div>
+</section>
+
+<p><small>Ces figures illustrent les principes ; l'application les applique en 3D sur la géométrie réelle.</small></p>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+
+// 1. Seuil par quantile
+function drawTpms() {
+  const cv = $('tpms'), g = cv.getContext('2d'), N = 180, por = $('por').value / 100, z = ($('zc').value / 100) * 2 * Math.PI, sheet = $('sheet').checked;
+  const vals = new Float32Array(N * N);
+  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+    const x = (i / N) * 4 * Math.PI, y = (j / N) * 4 * Math.PI;
+    const v = Math.sin(x) * Math.cos(y) + Math.sin(y) * Math.cos(z) + Math.sin(z) * Math.cos(x);
+    vals[j * N + i] = sheet ? Math.abs(v) : v;
+  }
+  const sorted = Float32Array.from(vals).sort();
+  const t = sorted[Math.floor((1 - por) * (sorted.length - 1))];
+  const img = g.createImageData(N, N);
+  const acc = css('--accent'), solid = [200, 205, 212], voidc = [20, 26, 34];
+  let solidN = 0;
+  for (let p = 0; p < N * N; p++) {
+    const s = vals[p] < t; if (s) solidN++;
+    const c = s ? solid : voidc;
+    img.data.set([c[0], c[1], c[2], 255], p * 4);
+  }
+  const off = new OffscreenCanvas(N, N); off.getContext('2d').putImageData(img, 0, 0);
+  g.imageSmoothingEnabled = true; g.drawImage(off, 0, 0, cv.width, cv.height);
+  $('pv').textContent = `${Math.round(por * 100)} %`; $('zv').textContent = `${$('zc').value} %`;
+  $('pm').textContent = `${(100 - (solidN / (N * N)) * 100).toFixed(1)} %  (seuil t = ${t.toFixed(3)})`;
+}
+['por', 'zc', 'sheet'].forEach((id) => $(id).addEventListener('input', drawTpms));
+
+// 2. Gibson-Ashby
+function drawGa() {
+  const n = $('n').value / 10, C = $('c').value / 100, Es = Number($('mat').value);
+  $('nv').textContent = n.toFixed(1); $('cv').textContent = C.toFixed(2);
+  const W = 360, H = 260, L = 44, B = 30, x = (r) => L + ((Math.log10(r) + 1.3) / 1.3) * (W - L - 10), y = (E) => H - B - ((Math.log10(Math.max(E, 1e-4)) + 3) / 5.3) * (H - B - 10);
+  const band = (lo, hi, col) => `<rect x="${L}" y="${y(hi)}" width="${W - L - 10}" height="${y(lo) - y(hi)}" fill="${col}" opacity=".15"/>`;
+  let path = '';
+  for (let i = 0; i <= 60; i++) { const r = 0.05 * Math.pow(20, i / 60); path += `${i ? 'L' : 'M'}${x(r).toFixed(1)},${y(C * Es * r ** n).toFixed(1)}`; }
+  const ticksY = [0.001, 0.01, 0.1, 1, 10, 100].map((v) => `<text x="${L - 6}" y="${y(v) + 4}" text-anchor="end">${v}</text><line x1="${L}" x2="${W - 10}" y1="${y(v)}" y2="${y(v)}" stroke="${css('--line')}"/>`).join('');
+  const ticksX = [0.05, 0.1, 0.2, 0.5, 1].map((v) => `<text x="${x(v)}" y="${H - B + 16}" text-anchor="middle">${v}</text>`).join('');
+  $('ga').innerHTML = `<g font-size="10" fill="${css('--muted')}">${ticksY}${ticksX}<text x="${W / 2}" y="${H - 2}" text-anchor="middle">densité relative ρ</text><text x="${L + 4}" y="22">GPa</text></g>
+    ${band(0.1, 2, css('--accent'))}${band(7, 30, css('--warm'))}<path d="${path}" fill="none" stroke="${css('--accent')}" stroke-width="2.5"/>`;
+}
+['n', 'c', 'mat'].forEach((id) => $(id).addEventListener('input', drawGa));
+
+// 3. D3Q19 en perspective
+function drawD3q19() {
+  const dirs = [];
+  for (const a of [-1, 0, 1]) for (const b of [-1, 0, 1]) for (const c of [-1, 0, 1]) { const s = Math.abs(a) + Math.abs(b) + Math.abs(c); if (s > 0 && s < 3) dirs.push([a, b, c, s]); }
+  const P = ([a, b, c]) => [68 * (a + 0.42 * b), 68 * (0.3 * b - c)]; // perspective cavaliere
+  const cube = [[-1, -1, -1], [1, -1, -1], [1, 1, -1], [-1, 1, -1], [-1, -1, 1], [1, -1, 1], [1, 1, 1], [-1, 1, 1]].map(P);
+  const edges = [[0, 1], [1, 2], [2, 3], [3, 0], [4, 5], [5, 6], [6, 7], [7, 4], [0, 4], [1, 5], [2, 6], [3, 7]];
+  let s = `<defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0L10 5L0 10z" fill="${css('--text')}"/></marker></defs>`;
+  s += edges.map(([i, j]) => `<line x1="${cube[i][0]}" y1="${cube[i][1]}" x2="${cube[j][0]}" y2="${cube[j][1]}" stroke="${css('--line')}"/>`).join('');
+  for (const d of dirs) { const [px, py] = P(d); s += `<line x1="0" y1="0" x2="${px * 0.92}" y2="${py * 0.92}" stroke="${d[3] === 1 ? css('--accent') : css('--warm')}" stroke-width="2" marker-end="url(#ar)"/>`; }
+  s += `<circle r="6" fill="${css('--text')}"/><text x="-120" y="108" font-size="11" fill="${css('--accent')}">6 faces</text><text x="40" y="108" font-size="11" fill="${css('--warm')}">12 arêtes</text>`;
+  $('d3q19').innerHTML = s;
+}
+
+// 4. Croissance dans un pore circulaire de rayon R : remplissage a t = d (2R - d) / (2 lambda)
+function drawGrow() {
+  const cv = $('grow'), g = cv.getContext('2d'), N = 160, day = Number($('day').value), lam = $('lam').value / 1000, R = 0.4; // pore de 0,8 mm
+  $('dv').textContent = day; $('lv').textContent = $('lam').value;
+  const img = g.createImageData(N, N);
+  let filled = 0, pore = 0;
+  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+    const r = Math.hypot(i / N - 0.5, j / N - 0.5);
+    let col;
+    if (r > R) col = [200, 205, 212];
+    else {
+      pore++;
+      const d = R - r, tFill = (d * (2 * R - d)) / (2 * lam);
+      if (tFill <= day) { filled++; col = [215, 131, 138]; } else col = [20, 26, 34];
+    }
+    img.data.set([col[0], col[1], col[2], 255], (j * N + i) * 4);
+  }
+  const off = new OffscreenCanvas(N, N); off.getContext('2d').putImageData(img, 0, 0);
+  g.drawImage(off, 0, 0, cv.width, cv.height);
+  $('gf').textContent = `${Math.round((filled / pore) * 100)} %, comblement total au jour ${Math.round((R * R) / (2 * lam))}`;
+}
+['day', 'lam'].forEach((id) => $(id).addEventListener('input', drawGrow));
+
+const all = () => { drawTpms(); drawGa(); drawD3q19(); drawGrow(); };
+all();
+matchMedia('(prefers-color-scheme: light)').addEventListener('change', all);
+</script>
+</body>
+</html>

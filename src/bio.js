@@ -160,7 +160,7 @@ export function localRadius(dt2, mask, nx, ny, nz) {
 // rayon R, le front avance a v = lambda / r, d'ou r^2 = R^2 - 2 lambda t : un voxel a la distance d
 // de la paroi est comble au temps t = d (2R - d) / (2 lambda), R etant le rayon local du pore.
 // Les parois planes (R grand) croissent lentement, les pores etroits se comblent d'abord.
-export function growTissue(params, { res = 56, lambda = 2.5e-3, days = 56, step = 1, snapshots = [7, 14, 28, 42, 56], field: given } = {}) {
+export function growTissue(params, { res = 56, lambda = 2.5e-3, days = 56, step = 1, snapshots = [7, 14, 28, 42, 56], field: given = undefined } = {}) {
   const field = given || buildField({ ...params, res });
   const { data, inside, nx, ny, nz, hx: h } = field;
   const N = nx * ny * nz;
@@ -248,7 +248,7 @@ function rng(seed) {
 // par le champ de vitesse et sedimentent (vitesse de Stokes d'une cellule de 15 um, environ 9 um/s,
 // gravite selon -z, l'ecoulement montant selon +z). Au contact d'une paroi, elles adherent avec
 // la probabilite donnee, sinon elles sont reprises par l'ecoulement.
-export function seedCells(flow, box, { cells = 2000, attach = 0.3, settling = 0.009, radius = 0.0075, frames = 72, seed = 7, duration } = {}) {
+export function seedCells(flow, box, { cells = 2000, attach = 0.3, settling = 0.009, radius = 0.0075, frames = 72, seed = 7, duration = undefined } = {}) {
   const { nx, ny, nz, size, solid, ux, uy, uz, scale } = flow;
   const [X, Y, Z] = box;
   const plane = nx * ny;

@@ -128,7 +128,7 @@ export class LBM {
     return this.nu * this.meanU / this.g;
   }
 
-  run({ maxSteps = 4000, chunk = 50, tol = 1e-4, onProgress } = {}) {
+  run({ maxSteps = 4000, chunk = 50, tol = 1e-4, onProgress = undefined } = {}) {
     let prev = 0;
     while (this.steps < maxSteps) {
       const u = this.step(chunk);

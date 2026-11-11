@@ -1,6 +1,6 @@
 {
   "name": "scaffold-studio",
-  "version": "1.7.0",
+  "version": "1.8.0",
   "description": "Conception et simulation de scaffolds poreux pour l'ingenierie tissulaire osseuse",
   "scripts": {
     "dev": "vite",
@@ -8,7 +8,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "e2e": "playwright test --trace off",
-    "bench": "node scripts/bench.mjs"
+    "bench": "node scripts/bench.mjs",
+    "typecheck": "tsc -p tsconfig.json"
   },
   "author": "BAILLY emmanuel",
   "license": "MIT",
@@ -18,6 +19,8 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",
+    "@types/three": "^0.170.0",
+    "typescript": "^5.6.3",
     "vite": "^5.4.11",
     "vitest": "^2.1.8"
   },

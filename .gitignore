@@ -5,3 +5,4 @@ dist/
 test-results/
 e2e-report/
 bench.json
+dataset/stl/

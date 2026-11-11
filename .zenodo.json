@@ -1,0 +1,9 @@
+{
+  "title": "Scaffold Studio: design, measurement and simulated perfusion of porous bone scaffolds",
+  "description": "Browser based digital test bench for bone tissue engineering scaffolds: TPMS, strut lattices and Voronoi foams, morphology, periodic voxel finite elements, D3Q19 lattice Boltzmann perfusion (CPU and WebGPU), oxygen transport, seeding and curvature driven tissue growth. Includes an open dataset of generated designs (dataset/designs.csv).",
+  "upload_type": "software",
+  "creators": [{ "name": "Bailly, Emmanuel", "affiliation": "Aix-Marseille Université" }],
+  "license": "MIT",
+  "keywords": ["tissue engineering", "bone scaffold", "TPMS", "lattice Boltzmann", "permeability", "finite elements", "additive manufacturing"],
+  "language": "fra"
+}

@@ -65,14 +65,14 @@ export function cellVoxels(params, n = 24) {
   let q = 0, cnt = 0;
   for (let k = 0; k < nz; k++) for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
     const s = fn.tpms(((i + 0.5) * size[0]) / nx, ((j + 0.5) * size[1]) / ny, ((k + 0.5) * size[2]) / nz) < 0;
-    solid[q++] = s ? 1 : 0; cnt += s;
+    solid[q++] = s ? 1 : 0; cnt += s ? 1 : 0;
   }
   return { solid, nx, ny, nz, size, density: cnt / solid.length };
 }
 
 // Homogeneisation : renvoie le tenseur effectif C (6 x 6, Voigt) pour un module Es = 1.
 // cases : liste des deformations macroscopiques unitaires a calculer (0..5).
-export function homogenize(vox, { nu = 0.3, cases = [0, 1, 2, 3, 4, 5], tol = 1e-6, maxIter = 4000, onProgress } = {}) {
+export function homogenize(vox, { nu = 0.3, cases = [0, 1, 2, 3, 4, 5], tol = 1e-6, maxIter = 4000, onProgress = undefined } = {}) {
   const { solid, nx, ny, nz } = vox;
   const { K, B0, D } = hexStiffness(nu);
   const nn = nx * ny * nz, ndof = nn * 3;

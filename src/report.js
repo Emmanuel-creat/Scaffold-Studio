@@ -9,19 +9,22 @@ import { fmt, pct, sci } from './format.js';
 import { t, getLang } from './i18n.js';
 
 export const REFERENCES = [
-  'Gibson L.J., Ashby M.F. Cellular Solids: Structure and Properties. Cambridge University Press, 1997.',
-  'Felzenszwalb P.F., Huttenlocher D.P. Distance transforms of sampled functions. Theory of Computing 8, 2012.',
+  'Gibson L.J., Ashby M.F. Cellular Solids: Structure and Properties. Cambridge University Press, 1997. doi:10.1017/CBO9781139878326',
+  'Felzenszwalb P.F., Huttenlocher D.P. Distance transforms of sampled functions. Theory of Computing 8:415, 2012. doi:10.4086/toc.2012.v008a019',
   'Ginzburg I., Verhaeghe F., d\'Humières D. Two-relaxation-time lattice Boltzmann scheme. Communications in Computational Physics 3, 2008.',
-  'Sangani A.S., Acrivos A. Slow flow through a periodic array of spheres. International Journal of Multiphase Flow 8, 1982.',
+  'Sangani A.S., Acrivos A. Slow flow through a periodic array of spheres. International Journal of Multiphase Flow 8:343, 1982. doi:10.1016/0301-9322(82)90047-7',
   'ISO 13314:2011. Essais mécaniques des métaux, ductilité, essai de compression des métaux poreux et cellulaires.',
   'Koponen A., Kataja M., Timonen J. Tortuous flow in porous media. Physical Review E 54, 1996.',
   'Hildebrand T., Rüegsegger P. A new method for the model-independent assessment of thickness in three-dimensional images. Journal of Microscopy 185, 1997.',
-  'Karageorgiou V., Kaplan D. Porosity of 3D biomaterial scaffolds and osteogenesis. Biomaterials 26, 2005.',
-  'Rumpler M. et al. The effect of geometry on three-dimensional tissue growth. Journal of the Royal Society Interface 5, 2008.',
+  'Karageorgiou V., Kaplan D. Porosity of 3D biomaterial scaffolds and osteogenesis. Biomaterials 26:5474, 2005. doi:10.1016/j.biomaterials.2005.02.002',
+  'Rumpler M. et al. The effect of geometry on three-dimensional tissue growth. Journal of the Royal Society Interface 5:1173, 2008. doi:10.1098/rsif.2008.0064',
   'Zadpoor A.A. Mechanical performance of additively manufactured meta-biomaterials. Acta Biomaterialia 85, 2019.',
   'Hollister S.J. Porous scaffold design for tissue engineering. Nature Materials 4, 2005.',
-  'Bidan C.M. et al. How linear tension converts to curvature: geometric control of bone tissue growth. PLoS ONE 7, 2012.',
-  'McCoy R.J., O\'Brien F.J. Influence of shear stress in perfusion bioreactor cultures for the development of three-dimensional bone tissue constructs. Tissue Engineering Part B 16, 2010.',
+  'Bidan C.M. et al. How linear tension converts to curvature: geometric control of bone tissue growth. PLoS ONE 7:e36336, 2012. doi:10.1371/journal.pone.0036336',
+  'McCoy R.J., O\'Brien F.J. Influence of shear stress in perfusion bioreactor cultures for the development of three-dimensional bone tissue constructs. Tissue Engineering Part B 16:587, 2010. doi:10.1089/ten.teb.2010.0370',
+  'Castro A.P.G. et al. Permeability versus design in TPMS scaffolds. Materials 12:1313, 2019. doi:10.3390/ma12081313',
+  'Goldman R. Curvature formulas for implicit curves and surfaces. Computer Aided Geometric Design 22:632, 2005. doi:10.1016/j.cagd.2005.06.005',
+  'Taubin G. A signal processing approach to fair surface design. SIGGRAPH 95, p. 351, 1995. doi:10.1145/218380.218473',
   'Cho Y.I., Kensey K.R. Effects of the non-Newtonian viscosity of blood on flows in a diseased arterial vessel. Biorheology 28, 1991.',
 ];
 
@@ -117,7 +120,7 @@ ${dg ? `<h2>${t('Résorption')}</h2>${lineChart({ series: [{ pts: dg.months.map(
 <h2>${t('Méthodes')}</h2>
 <p>${t('Surfaces minimales triplement périodiques seuillées pour atteindre la porosité visée, maillage par surface nets. Diamètres par sphères inscrites sur la transformée de distance exacte. Rigidité par Gibson-Ashby, ajustée par éléments finis voxel quand ils ont été calculés. Perfusion par Boltzmann sur réseau D3Q19 à collision TRT, validée sur l\'écoulement de Poiseuille et sur un réseau de sphères. Courbe de compression, fatigue, flambement et résorption issus de modèles de conception.')}</p>
 <p class="note">${t('Ces valeurs sont des estimations de conception. Elles orientent un choix d\'architecture et doivent être confirmées par éléments finis détaillés et par essais.')}</p>
-<h2>${t('Références')}</h2><ol>${REFERENCES.map((r) => `<li>${r}</li>`).join('')}</ol>
+<h2>${t('Références')}</h2><ol>${REFERENCES.map((r) => `<li>${r.replace(/doi:(\S+)/, (m, d) => `<a href="https://doi.org/${d}">doi:${d}</a>`)}</li>`).join('')}</ol>
 <footer>${t('Généré par Scaffold Studio')} · BAILLY emmanuel · <span class="noprint">${t('Imprimer en PDF : Ctrl+P')}</span></footer>
 </body></html>`;
 }

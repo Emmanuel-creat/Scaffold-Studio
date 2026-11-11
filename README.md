@@ -1,10 +1,14 @@
 # Scaffold Studio
 
+[English version](README.en.md)
+
 Conception, mesure et perfusion simulée de scaffolds poreux pour l'ingénierie tissulaire osseuse.
 
 Scaffold Studio génère des architectures poreuses à partir de surfaces minimales triplement périodiques (gyroïde, diamant, Schwarz P, I-WP, Neovius), calcule en direct leurs propriétés morphologiques et mécaniques, puis simule la circulation du milieu de culture à travers les pores. Le tout tourne dans le navigateur, en local, sans serveur de calcul.
 
-**Démo en ligne :** https://emmanuel-creat.github.io/Scaffold-Studio/
+**Démo en ligne :** https://emmanuel-creat.github.io/Scaffold-Studio/ (installable, fonctionne hors ligne)
+
+**Documents :** [méthodes](docs/METHODES.md) et [méthodes illustrées](https://emmanuel-creat.github.io/Scaffold-Studio/methodes.html), [validation](docs/VALIDATION.md), [note technique](docs/NOTE_TECHNIQUE.md), [travaux pratiques](docs/TP_GUIDE.md), [cahier des charges](docs/CAHIER_DES_CHARGES.md) ([specification](docs/SPECIFICATION.md)), [jeu de données](dataset/LISEZMOI.md).
 
 ![Interface](docs/captures/01-interface.png)
 
@@ -89,9 +93,12 @@ npm test          # tests unitaires (maillage, mesures, solveur)
 npm run build     # version de production dans dist/
 npm run e2e       # tests de bout en bout dans Chromium (Playwright), captures dans test-results/
 npm run bench     # temps des calculs principaux, comparés à bench.baseline.json
+npm run typecheck # vérification de types du coeur de calcul (TypeScript sur le JavaScript)
+node scripts/validation.mjs  # comparaison avec Castro et al. 2019
+node scripts/dataset.mjs     # régénère le jeu de données ouvert
 ```
 
-La CI (GitHub Actions) lance à chaque envoi les tests unitaires, les tests de non-régression sur des valeurs de référence, le banc de performance (tableau dans le résumé du job, alerte au-delà de 50 % de ralentissement) et les tests de bout en bout, dont les captures d'écran sont conservées 14 jours.
+La CI (GitHub Actions) lance à chaque envoi la vérification de types, les tests unitaires, les tests de non-régression sur des valeurs de référence, le banc de performance (tableau dans le résumé du job, alerte au-delà de 50 % de ralentissement) et les tests de bout en bout, dont les captures d'écran sont conservées 14 jours.
 
 ## Raccourcis
 
@@ -128,7 +135,7 @@ Le studio image et vidéo prépare directement un post LinkedIn :
 
 ## Méthodes et validation
 
-Les méthodes sont détaillées dans le [cahier des charges](docs/CAHIER_DES_CHARGES.md). En résumé :
+Les méthodes sont détaillées dans [docs/METHODES.md](docs/METHODES.md), avec les références vérifiées (DOI) ; une version illustrée et interactive est dans l'application (Aide, puis Méthodes illustrées). La comparaison avec une étude publiée est dans [docs/VALIDATION.md](docs/VALIDATION.md). En résumé :
 
 - **Géométrie :** le seuil de chaque surface est calculé par quantile sur une cellule unité pour atteindre exactement la porosité visée, puis l'isosurface est maillée par surface nets (maillage fermé et orienté).
 - **Treillis et Voronoï :** le champ est la distance aux poutres de la cellule (repliée par symétrie dans un octant), le diamètre des poutres découle du seuil de porosité ; la mousse de Voronoï utilise l'écart F3 − F1 entre le premier et le troisième germe le plus proche (il s'annule le long des arêtes, où trois cellules se touchent) sur huit germes perturbés par cellule. Le seuil est calculé sur un échantillonnage décalé pour éviter le repliement de spectre sur les poutres fines.
@@ -168,6 +175,7 @@ Tests automatiques :
 | Courbure de Gauss | gyroïde en selle sur plus de 75 % de sa surface |
 | Surface d'anisotropie | sphère pour un matériau isotrope, maximum selon la diagonale pour un cubique à A > 1 |
 | Non-régression | porosité, pore, strut, surface spécifique et perméabilité du gyroïde, morphologie de l'octet, à 1 à 3 % près |
+| Trois TPMS à 70 % contre Castro et al. 2019 | ordre des rigidités retrouvé (rapports 1,29 et 0,78 contre 1,18 et 0,71), écart de perméabilité gyroïde et Schwarz D de 43 % contre 49 % mesurés ([détails](docs/VALIDATION.md)) |
 | Fragments détachés | le plus gros solide est conservé, les fragments sont vidés |
 | Volume du maillage par rapport à la porosité visée | écart inférieur à 3 points sur les 10 combinaisons surface et mode |
 | Transformée de distance | distances exactes sur un cas de référence |
@@ -214,4 +222,4 @@ public/            manifeste et service worker (application installable hors lig
 
 BAILLY emmanuel, étudiant en master Bioingénierie des tissus et des implants (Aix-Marseille Université).
 
-Licence MIT.
+Licence MIT. Pour citer ce logiciel : [CITATION.cff](CITATION.cff). Le fichier `.zenodo.json` prépare l'archivage sur Zenodo, qui attribue un DOI à chaque version publiée.

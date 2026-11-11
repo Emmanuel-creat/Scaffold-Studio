@@ -1340,7 +1340,9 @@ if (getLang() === 'en') {
   <h3>Methods</h3>
   <p>Geometry: triply periodic minimal surfaces, threshold solved for the target porosity, surface nets meshing. Measurements: pore diameter and strut thickness by inscribed spheres (exact distance transform). Stiffness: Gibson-Ashby law. Perfusion: D3Q19 lattice Boltzmann with TRT collision, Darcy permeability, wall shear stress from the near-wall velocity gradient.</p>
   <p class="note">Mechanical and shear values are design estimates, to be confirmed by finite elements and testing.</p>
+  <p><button type="button" id="btn-tour-en" class="btn">Guided tour</button> <a class="btn" href="./methodes.html" target="_blank" rel="noopener">Illustrated methods (French)</a></p>
   <form method="dialog"><button class="primary">Close</button></form>`;
+  document.getElementById('btn-tour-en').onclick = () => { document.getElementById('help').close(); tour.start(); };
 }
 
 // ---------- Import STL ----------
